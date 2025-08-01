@@ -12,6 +12,182 @@ class Firm < ApplicationRecord
   has_many :performance_metrics, dependent: :destroy
   has_many :cache_entries, dependent: :destroy
   
+  # Security: Added encryption for sensitive firm data
+  encrypt :tax_id, deterministic: false
+  encrypt :bank_account_number, deterministic: false
+  encrypt :routing_number, deterministic: false
+  
+  # Security: Enhanced validations with sanitization
+  validates :name, presence: true, 
+                   length: { minimum: 2, maximum: 100 },
+                   format: { with: /\A[a-zA-Z0-9\s\-&.]+\z/, message: "contains invalid characters" }
+  
+  validates :tax_id, presence: true,
+                     format: { with: /\A\d{2}-\d{7}\z/, message: "must be in format XX-XXXXXXX" }
+  
+  validates :phone, format: { with: /\A\+?[1-9]\d{1,14}\z/, message: "invalid phone format" }
+  validates :email, format: { with: URI::MailTo::EMAIL_REGEXP }
+  
+  # Security: Role-based access control
+  has_many :firm_memberships, dependent: :destroy
+  has_many :members, through: :firm_memberships, source: :user
+  has_many :admins, -> { where(firm_memberships: { role: 'admin' }) }, 
+           through: :firm_memberships, source: :user
+  has_many :security_logs, dependent: :destroy
+  
+  # Security: Audit trail
+  has_many :security_events, dependent: :destroy
+  
+  scope :verified, -> { where(verified: true) }
+  scope :with_security_clearance, -> { where(security_clearance_level: ['high', 'top_secret']) }
+  
+  # Security: Access control methods
+  def accessible_by?(user)
+    return false unless user
+    return true if user.system_admin?
+    
+    # Check firm membership
+    firm_memberships.exists?(user: user) || user.firms.include?(self)
+  end
+  
+  def admin_access?(user)
+    return false unless accessible_by?(user)
+    return true if user.system_admin?
+    
+    firm_memberships.exists?(user: user, role: ['admin', 'owner'])
+  end
+  
+  def grant_membership(user, role = 'member', granted_by = nil)
+    # Security: Validate role assignment permissions
+    unless granted_by&.system_admin? || admin_access?(granted_by)
+      raise SecurityError, "Insufficient permissions to grant membership"
+    end
+    
+    # Security: Log membership changes
+    log_security_event('membership_granted', {
+      user_id: user.id,
+      role: role,
+      granted_by: granted_by&.id,
+      ip_address: Current.ip_address
+    })
+    
+    firm_memberships.create!(
+      user: user,
+      role: role,
+      granted_at: Time.current,
+      granted_by: granted_by
+    )
+  end
+  
+  def revoke_membership(user, revoked_by = nil)
+    # Security: Prevent self-revocation of last admin
+    if user == revoked_by && admins.count == 1 && admins.include?(user)
+      raise SecurityError, "Cannot remove last admin"
+    end
+    
+    membership = firm_memberships.find_by(user: user)
+    return false unless membership
+    
+    # Security: Log membership revocation
+    log_security_event('membership_revoked', {
+      user_id: user.id,
+      role: membership.role,
+      revoked_by: revoked_by&.id,
+      ip_address: Current.ip_address
+    })
+    
+    membership.destroy!
+    true
+  end
+  
+  # Security: Data access logging
+  def log_data_access(user, data_type, purpose = nil)
+    security_events.create!(
+      event_type: 'data_access',
+      user: user,
+      details: {
+        data_type: data_type,
+        purpose: purpose,
+        ip_address: Current.ip_address,
+        user_agent: Current.user_agent
+      },
+      occurred_at: Time.current
+    )
+  end
+  
+  # Security: Compliance and audit methods
+  def security_compliance_check
+    issues = []
+    
+    # Check for required security settings
+    issues << "Two-factor authentication not enforced" unless enforce_2fa?
+    issues << "Password policy not configured" unless password_policy.present?
+    issues << "No security clearance level set" unless security_clearance_level.present?
+    issues << "Audit logging disabled" unless audit_logging_enabled?
+    
+    # Check for stale memberships
+    stale_members = firm_memberships.where('last_activity_at < ?', 90.days.ago)
+    issues << "#{stale_members.count} inactive members found" if stale_members.any?
+    
+    # Check for weak permissions
+    over_privileged = firm_memberships.where(role: 'admin').count
+    issues << "Too many admins (#{over_privileged})" if over_privileged > 5
+    
+    {
+      compliant: issues.empty?,
+      issues: issues,
+      last_checked: Time.current
+    }
+  end
+  
+  def enable_security_feature(feature, enabled_by)
+    # Security: Log security feature changes
+    log_security_event('security_feature_changed', {
+      feature: feature,
+      enabled: true,
+      enabled_by: enabled_by.id,
+      ip_address: Current.ip_address
+    })
+    
+    case feature
+    when 'two_factor_auth'
+      update!(enforce_2fa: true)
+      notify_members_security_change('Two-factor authentication now required')
+    when 'audit_logging'
+      update!(audit_logging_enabled: true)
+    when 'ip_restrictions'
+      update!(ip_restrictions_enabled: true)
+    else
+      raise ArgumentError, "Unknown security feature: #{feature}"
+    end
+  end
+  
+  # Security: Incident response
+  def security_incident_response(incident_type, details, reported_by)
+    incident = security_events.create!(
+      event_type: 'security_incident',
+      user: reported_by,
+      details: {
+        incident_type: incident_type,
+        details: details,
+        reported_by: reported_by.id,
+        severity: calculate_incident_severity(incident_type),
+        ip_address: Current.ip_address
+      },
+      occurred_at: Time.current
+    )
+    
+    # Notify security team
+    SecurityIncidentJob.perform_later(incident.id)
+    
+    # Auto-respond to critical incidents
+    if incident.details['severity'] == 'critical'
+      auto_security_response(incident_type)
+    end
+    
+    incident
+  end
+  
   validates :name, presence: true, uniqueness: true
   validates :subscription_plan, presence: true
   validates :rate_multiplier, presence: true, numericality: { greater_than: 0 }
@@ -300,4 +476,43 @@ class Firm < ApplicationRecord
   # - UptimeService (external monitoring)
   # - IntegrationHealthService (health checks)
   # - ThirdPartyMonitorService (external metrics)
+  
+  def log_security_event(event_type, details = {})
+    security_events.create!(
+      event_type: event_type,
+      details: details.merge({
+        timestamp: Time.current,
+        source: 'firm_model'
+      }),
+      occurred_at: Time.current
+    )
+  end
+  
+  def notify_members_security_change(message)
+    admins.find_each do |admin|
+      SecurityNotificationMailer.security_change(admin, self, message).deliver_later
+    end
+  end
+  
+  def calculate_incident_severity(incident_type)
+    case incident_type
+    when 'data_breach', 'unauthorized_access' then 'critical'
+    when 'suspicious_login', 'failed_2fa' then 'high'
+    when 'policy_violation' then 'medium'
+    else 'low'
+    end
+  end
+  
+  def auto_security_response(incident_type)
+    case incident_type
+    when 'data_breach'
+      # Lock all accounts temporarily
+      members.update_all(account_locked: true, locked_at: Time.current)
+      log_security_event('auto_lockdown', { reason: incident_type })
+    when 'unauthorized_access'
+      # Force password reset for all members
+      members.update_all(force_password_reset: true)
+      log_security_event('force_password_reset', { reason: incident_type })
+    end
+  end
 end 

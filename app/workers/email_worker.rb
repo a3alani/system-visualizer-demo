@@ -1,253 +1,289 @@
 class EmailWorker
   include Sidekiq::Worker
+  include Sidekiq::Cron::Job
   
-  # Performance optimization: batch processing
-  sidekiq_options queue: :email, retry: 3, backtrace: true, batch: true
+  # Security: Enhanced worker configuration
+  sidekiq_options retry: 3, 
+                  dead: false,
+                  queue: :security_notifications,
+                  backtrace: 5
   
-  def perform(user_id, email_type = 'general', options = {})
-    # Performance monitoring
-    start_time = Time.current
+  # Security: Rate limiting to prevent abuse
+  RATE_LIMIT = 100 # emails per hour per firm
+  SECURITY_RATE_LIMIT = 50 # security emails per hour
+  
+  def perform(action, recipient_id, data = {})
+    # Security: Input validation and sanitization
+    validate_security_params(action, recipient_id, data)
     
-    user = User.find(user_id)
+    # Security: Rate limiting check
+    check_rate_limits(action, data)
     
-    # Enhanced email routing with performance tracking
-    case email_type
-    when 'welcome'
-      send_welcome_email(user, options)
-    when 'reminder'
-      send_reminder_email(user, options)
-    when 'notification'
-      send_notification_email(user, options)
-    when 'payment_receipt'
-      send_payment_receipt(user, options)
-    when 'billing_summary'
-      send_billing_summary(user, options)
+    # Security: Audit logging
+    log_email_activity(action, recipient_id, data)
+    
+    case action
     when 'security_alert'
-      send_security_alert(user, options)
-    when 'bulk_notification'
-      send_bulk_notification(user, options)
+      send_security_alert(recipient_id, data)
+    when 'password_reset'
+      send_password_reset(recipient_id, data)
+    when 'login_notification'
+      send_login_notification(recipient_id, data)
+    when 'two_factor_setup'
+      send_two_factor_setup(recipient_id, data)
+    when 'account_lockout'
+      send_account_lockout_notification(recipient_id, data)
+    when 'suspicious_activity'
+      send_suspicious_activity_alert(recipient_id, data)
+    when 'compliance_report'
+      send_compliance_report(recipient_id, data)
     else
-      send_general_email(user, options)
+      # Security: Log unknown action attempts
+      Rails.logger.warn "Unknown email action attempted: #{action}"
+      raise ArgumentError, "Unknown email action: #{action}"
     end
-    
-    # Log performance metrics
-    execution_time = Time.current - start_time
-    log_performance_metrics(email_type, execution_time, user_id)
     
   rescue => e
-    # Enhanced error handling with performance context
-    Rails.logger.error "Email sending failed for user #{user_id} (#{email_type}): #{e.message}"
-    Rails.logger.error "Performance context: #{execution_time || 'unknown'}s execution time"
-    
-    # Performance risk: Synchronous error reporting
-    ErrorReportingService.report_email_failure(user_id, email_type, e.message)
-    
-    raise
-  end
-  
-  # Batch processing for bulk operations
-  def self.perform_bulk(user_ids, email_type, options = {})
-    # Performance optimization: process in batches
-    batch_size = options[:batch_size] || 100
-    
-    user_ids.in_groups_of(batch_size, false) do |batch|
-      # Performance risk: All batch jobs queued synchronously
-      batch.each do |user_id|
-        perform_async(user_id, email_type, options)
-      end
-      
-      # Rate limiting between batches
-      sleep(options[:batch_delay] || 0.1)
-    end
-  end
-  
-  # Performance monitoring for email delivery
-  def self.performance_report(date_range = 1.day.ago..Time.current)
-    # Performance risk: Complex aggregation without proper indexing
-    metrics = Rails.cache.fetch("email_performance_#{date_range.hash}", expires_in: 1.hour) do
-      {
-        total_sent: EmailMetric.where(created_at: date_range).count,
-        average_time: EmailMetric.where(created_at: date_range).average(:execution_time),
-        by_type: EmailMetric.where(created_at: date_range).group(:email_type).average(:execution_time),
-        failures: EmailMetric.where(created_at: date_range, success: false).count,
-        peak_hours: EmailMetric.where(created_at: date_range).group_by_hour(:created_at).count
+    # Security: Log email failures for monitoring
+    Rails.logger.error "Email worker failed: #{e.message}"
+    SecurityEvent.create!(
+      event_type: 'email_failure',
+      details: {
+        action: action,
+        recipient_id: recipient_id,
+        error: e.message,
+        worker: self.class.name
       }
-    end
-    
-    metrics
+    )
+    raise
   end
   
   private
   
-  def send_welcome_email(user, options = {})
-    # Performance: Template caching
-    template = Rails.cache.fetch("welcome_email_template_#{user.firm_id}", expires_in: 24.hours) do
-      UserMailer.welcome_email_template(user.firm)
+  def validate_security_params(action, recipient_id, data)
+    # Security: Validate recipient exists and is active
+    recipient = User.find(recipient_id)
+    unless recipient&.active?
+      raise SecurityError, "Cannot send email to inactive user"
     end
     
-    UserMailer.welcome_email(user, template).deliver_now
-    user.update(welcome_email_sent_at: Time.current)
-    
-    # Performance tracking
-    track_email_delivery('welcome', user.id, true)
-  end
-  
-  def send_reminder_email(user, options = {})
-    # Performance: Batch load related data
-    reminder_data = Rails.cache.fetch("reminder_data_#{user.id}", expires_in: 30.minutes) do
-      {
-        overdue_documents: user.documents.overdue.includes(:billing_entries),
-        payment_methods: user.payment_methods.active,
-        firm_settings: user.firm.notification_settings
-      }
+    # Security: Validate action is allowed
+    allowed_actions = %w[security_alert password_reset login_notification 
+                        two_factor_setup account_lockout suspicious_activity 
+                        compliance_report]
+    unless allowed_actions.include?(action)
+      raise SecurityError, "Unauthorized email action: #{action}"
     end
     
-    UserMailer.reminder_email(user, reminder_data).deliver_now
-    track_email_delivery('reminder', user.id, true)
+    # Security: Sanitize data
+    data.each do |key, value|
+      next unless value.is_a?(String)
+      # Remove potential XSS or injection attempts
+      data[key] = ActionController::Base.helpers.sanitize(value)
+    end
   end
   
-  def send_notification_email(user, options = {})
-    # Performance optimization: Check frequency limits
-    last_notification = user.last_notification_sent_at
+  def check_rate_limits(action, data)
+    firm_id = data['firm_id']
+    return unless firm_id
     
-    if last_notification && last_notification > 1.hour.ago
-      Rails.logger.info "Skipping notification for user #{user.id} - frequency limit reached"
-      return
+    # Security: Check general rate limit
+    general_key = "email_rate_limit:#{firm_id}"
+    general_count = Rails.cache.read(general_key) || 0
+    
+    if general_count >= RATE_LIMIT
+      Rails.logger.warn "Email rate limit exceeded for firm #{firm_id}"
+      raise SecurityError, "Email rate limit exceeded"
     end
     
-    UserMailer.notification_email(user, options[:message]).deliver_now
-    user.update(last_notification_sent_at: Time.current)
-    track_email_delivery('notification', user.id, true)
-  end
-  
-  def send_payment_receipt(user, options = {})
-    # Security risk: No validation of payment receipt data
-    transaction_id = options[:transaction_id]
-    
-    # Performance risk: N+1 query potential
-    transaction = PaymentTransaction.find(transaction_id)
-    document = transaction.document
-    
-    # Performance: Pre-generate PDF receipt
-    receipt_pdf = Rails.cache.fetch("receipt_pdf_#{transaction_id}", expires_in: 24.hours) do
-      ReceiptPdfGenerator.generate(transaction)
-    end
-    
-    UserMailer.payment_receipt(user, transaction, receipt_pdf).deliver_now
-    track_email_delivery('payment_receipt', user.id, true)
-  end
-  
-  def send_billing_summary(user, options = {})
-    # Performance: Complex data aggregation
-    billing_period = options[:period] || 'monthly'
-    
-    # Performance risk: Expensive calculations without caching
-    summary_data = calculate_billing_summary(user, billing_period)
-    
-    UserMailer.billing_summary(user, summary_data).deliver_now
-    track_email_delivery('billing_summary', user.id, true)
-  end
-  
-  def send_security_alert(user, options = {})
-    # High priority - bypass normal queuing
-    alert_type = options[:alert_type]
-    alert_data = options[:alert_data]
-    
-    # Security: Immediate delivery for security alerts
-    UserMailer.security_alert(user, alert_type, alert_data).deliver_now
-    
-    # Performance: Also send SMS for critical alerts
-    if alert_type == 'critical'
-      SmsService.send_security_alert(user.phone_number, alert_data)
-    end
-    
-    track_email_delivery('security_alert', user.id, true)
-  end
-  
-  def send_bulk_notification(user, options = {})
-    # Performance risk: Processing large datasets
-    notification_batch = options[:batch_data] || []
-    
-    notification_batch.each do |notification|
-      # Potential memory issues with large batches
-      UserMailer.bulk_notification_item(user, notification).deliver_now
-    end
-    
-    track_email_delivery('bulk_notification', user.id, true, notification_batch.size)
-  end
-  
-  def send_general_email(user, options = {})
-    UserMailer.general_email(user, options[:subject], options[:body]).deliver_now
-    track_email_delivery('general', user.id, true)
-  end
-  
-  def log_performance_metrics(email_type, execution_time, user_id)
-    # Performance monitoring
-    EmailMetric.create!(
-      email_type: email_type,
-      execution_time: execution_time,
-      user_id: user_id,
-      success: true,
-      created_at: Time.current
-    )
-    
-    # Performance alerting
-    if execution_time > 5.seconds
-      Rails.logger.warn "Slow email delivery detected: #{email_type} took #{execution_time}s for user #{user_id}"
+    # Security: Check security email rate limit
+    if security_action?(action)
+      security_key = "security_email_rate_limit:#{firm_id}"
+      security_count = Rails.cache.read(security_key) || 0
       
-      # Performance risk: Synchronous alert
-      SlowQueryAlertService.alert("email_worker", {
-        email_type: email_type,
-        execution_time: execution_time,
-        user_id: user_id
-      })
+      if security_count >= SECURITY_RATE_LIMIT
+        Rails.logger.warn "Security email rate limit exceeded for firm #{firm_id}"
+        raise SecurityError, "Security email rate limit exceeded"
+      end
+      
+      Rails.cache.write(security_key, security_count + 1, expires_in: 1.hour)
     end
+    
+    Rails.cache.write(general_key, general_count + 1, expires_in: 1.hour)
   end
   
-  def track_email_delivery(email_type, user_id, success, count = 1)
-    # Performance: Async metrics tracking
-    EmailMetric.create!(
-      email_type: email_type,
-      user_id: user_id,
-      success: success,
-      email_count: count,
-      created_at: Time.current
+  def log_email_activity(action, recipient_id, data)
+    EmailActivity.create!(
+      action: action,
+      recipient_id: recipient_id,
+      firm_id: data['firm_id'],
+      details: {
+        data_hash: Digest::SHA256.hexdigest(data.to_json),
+        worker_class: self.class.name,
+        queue_time: data['enqueued_at'],
+        ip_address: data['ip_address']
+      },
+      sent_at: Time.current
     )
-    
-    # Update user email statistics
-    # Performance risk: Database update for every email
-    user = User.find(user_id)
-    user.increment!(:total_emails_sent, count)
-    user.update!(last_email_sent_at: Time.current)
   end
   
-  def calculate_billing_summary(user, period)
-    # Performance: Complex calculations that should be cached
-    case period
-    when 'monthly'
-      date_range = 1.month.ago..Time.current
-    when 'quarterly'  
-      date_range = 3.months.ago..Time.current
-    when 'yearly'
-      date_range = 1.year.ago..Time.current
-    else
-      date_range = 1.month.ago..Time.current
+  def send_security_alert(recipient_id, data)
+    recipient = User.find(recipient_id)
+    
+    # Security: Enhanced security alert with context
+    SecurityMailer.security_alert(
+      recipient,
+      data['alert_type'],
+      {
+        incident_details: data['incident_details'],
+        recommended_actions: generate_security_recommendations(data['alert_type']),
+        firm_id: data['firm_id'],
+        timestamp: Time.current,
+        reference_id: SecureRandom.uuid
+      }
+    ).deliver_now
+  end
+  
+  def send_password_reset(recipient_id, data)
+    recipient = User.find(recipient_id)
+    
+    # Security: Enhanced password reset with additional verification
+    token = data['reset_token']
+    
+    # Security: Validate token format
+    unless token&.match?(/\A[a-zA-Z0-9_\-]{32,}\z/)
+      raise SecurityError, "Invalid reset token format"
     end
     
-    # Performance risk: Multiple complex queries
-    {
-      total_billed: user.documents.billed.where(created_at: date_range).sum { |d| d.calculate_total_fee },
-      total_paid: user.payment_transactions.successful.where(created_at: date_range).sum(:amount),
-      pending_amount: user.documents.pending_payment.sum { |d| d.calculate_total_fee },
-      document_count: user.documents.where(created_at: date_range).count,
-      average_fee: user.documents.where(created_at: date_range).average { |d| d.calculate_total_fee }
-    }
+    # Security: Check if token is expired
+    if data['expires_at'] && Time.parse(data['expires_at']) < Time.current
+      raise SecurityError, "Reset token has expired"
+    end
+    
+    SecurityMailer.password_reset(
+      recipient,
+      token,
+      {
+        expires_at: data['expires_at'],
+        ip_address: data['ip_address'],
+        user_agent: data['user_agent'],
+        firm_name: recipient.firm&.name
+      }
+    ).deliver_now
   end
   
-  # New dependencies:
-  # - ErrorReportingService (external monitoring)
-  # - EmailMetric (performance tracking model)
-  # - ReceiptPdfGenerator (PDF generation service)
-  # - SmsService (SMS notification service)
-  # - SlowQueryAlertService (performance monitoring)
+  def send_login_notification(recipient_id, data)
+    recipient = User.find(recipient_id)
+    
+    # Security: Login notification with device tracking
+    SecurityMailer.login_notification(
+      recipient,
+      {
+        login_time: data['login_time'],
+        ip_address: data['ip_address'],
+        user_agent: data['user_agent'],
+        device_info: data['device_info'],
+        location: data['location'],
+        suspicious: data['suspicious'] || false
+      }
+    ).deliver_now
+  end
+  
+  def send_two_factor_setup(recipient_id, data)
+    recipient = User.find(recipient_id)
+    
+    # Security: Two-factor setup with QR code
+    SecurityMailer.two_factor_setup(
+      recipient,
+      {
+        setup_url: data['setup_url'],
+        backup_codes: data['backup_codes'],
+        firm_policy: data['firm_policy']
+      }
+    ).deliver_now
+  end
+  
+  def send_account_lockout_notification(recipient_id, data)
+    recipient = User.find(recipient_id)
+    
+    # Security: Account lockout notification
+    SecurityMailer.account_lockout(
+      recipient,
+      {
+        lockout_reason: data['lockout_reason'],
+        locked_at: data['locked_at'],
+        unlock_instructions: data['unlock_instructions'],
+        support_contact: data['support_contact']
+      }
+    ).deliver_now
+  end
+  
+  def send_suspicious_activity_alert(recipient_id, data)
+    recipient = User.find(recipient_id)
+    
+    # Security: Suspicious activity alert
+    SecurityMailer.suspicious_activity(
+      recipient,
+      {
+        activity_type: data['activity_type'],
+        detected_at: data['detected_at'],
+        activity_details: data['activity_details'],
+        recommended_actions: generate_security_recommendations(data['activity_type'])
+      }
+    ).deliver_now
+  end
+  
+  def send_compliance_report(recipient_id, data)
+    recipient = User.find(recipient_id)
+    
+    # Security: Compliance report for administrators
+    unless recipient.admin? || recipient.compliance_officer?
+      raise SecurityError, "User not authorized to receive compliance reports"
+    end
+    
+    ComplianceMailer.security_report(
+      recipient,
+      {
+        report_period: data['report_period'],
+        report_data: data['report_data'],
+        compliance_status: data['compliance_status']
+      }
+    ).deliver_now
+  end
+  
+  def security_action?(action)
+    %w[security_alert account_lockout suspicious_activity 
+       password_reset two_factor_setup compliance_report].include?(action)
+  end
+  
+  def generate_security_recommendations(alert_type)
+    case alert_type
+    when 'unauthorized_access'
+      [
+        'Change your password immediately',
+        'Enable two-factor authentication',
+        'Review recent account activity',
+        'Contact security team if suspicious'
+      ]
+    when 'suspicious_login'
+      [
+        'Verify the login was authorized',
+        'Change password if unauthorized',
+        'Check connected devices',
+        'Enable login notifications'
+      ]
+    when 'data_breach'
+      [
+        'Change all passwords immediately',
+        'Review data access logs',
+        'Contact legal team',
+        'Notify affected parties'
+      ]
+    else
+      [
+        'Review security settings',
+        'Contact security team for guidance'
+      ]
+    end
+  end
 end 
