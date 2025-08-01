@@ -1,0 +1,46 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+require_relative '../lib/system_visualizer'
+
+def show_usage
+  puts <<~USAGE
+    System Visualizer - Rails Codebase Analysis Tool
+    
+    Usage:
+      bin/system_visualizer analyze                    # Analyze entire codebase
+      bin/system_visualizer pr [base_branch]          # Analyze PR changes (default: main)
+      bin/system_visualizer help                      # Show this help
+    
+    Examples:
+      bin/system_visualizer analyze
+      bin/system_visualizer pr main
+      bin/system_visualizer pr develop
+  USAGE
+end
+
+def main
+  command = ARGV[0]
+  
+  case command
+  when 'analyze'
+    visualizer = SystemVisualizer.new
+    visualizer.analyze
+  when 'pr'
+    base_branch = ARGV[1] || 'main'
+    visualizer = SystemVisualizer.new
+    visualizer.analyze_pr_changes(base_branch)
+  when 'help', '--help', '-h', nil
+    show_usage
+  else
+    puts "Unknown command: #{command}"
+    show_usage
+    exit 1
+  end
+rescue => e
+  puts "Error: #{e.message}"
+  puts e.backtrace.first(5)
+  exit 1
+end
+
+main if __FILE__ == $0 
