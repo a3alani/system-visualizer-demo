@@ -1,0 +1,104 @@
+name: System Architecture Analysis
+
+on:
+  workflow_dispatch:
+    inputs:
+      analysis_type:
+        description: 'Type of analysis to run'
+        required: true
+        default: 'full'
+        type: choice
+        options:
+        - full
+        - models-only
+        - services-only
+        - dependencies-only
+  schedule:
+    - cron: '0 6 * * 1'  # Run every Monday at 6 AM UTC
+  push:
+    branches: [main, master]
+    paths:
+      - 'app/**'
+      - 'lib/**'
+
+jobs:
+  analyze:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: write
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+    
+    - name: Setup Ruby
+      uses: ruby/setup-ruby@v1
+      with:
+        ruby-version: '3.2'
+        bundler-cache: false
+    
+    - name: Create output directory
+      run: mkdir -p docs/system-diagrams
+    
+    - name: Run System Analysis
+      run: |
+        chmod +x bin/system_visualizer
+        echo "🔍 Running full system analysis..."
+        ./bin/system_visualizer analyze
+    
+    - name: Generate summary report
+      run: |
+        echo "# System Architecture Analysis Report" > docs/system-diagrams/ANALYSIS_REPORT.md
+        echo "Generated on: $(date)" >> docs/system-diagrams/ANALYSIS_REPORT.md
+        echo "" >> docs/system-diagrams/ANALYSIS_REPORT.md
+        echo "## 📊 Generated Diagrams" >> docs/system-diagrams/ANALYSIS_REPORT.md
+        echo "" >> docs/system-diagrams/ANALYSIS_REPORT.md
+        
+        for file in docs/system-diagrams/*.md; do
+          if [ -f "$file" ] && [ "$(basename "$file")" != "ANALYSIS_REPORT.md" ]; then
+            filename=$(basename "$file" .md)
+            lines=$(wc -l < "$file")
+            echo "- **${filename}**: ${lines} lines" >> docs/system-diagrams/ANALYSIS_REPORT.md
+          fi
+        done
+        
+        echo "" >> docs/system-diagrams/ANALYSIS_REPORT.md
+        echo "## 🔗 Quick Links" >> docs/system-diagrams/ANALYSIS_REPORT.md
+        echo "- View diagrams at [Mermaid Live](https://mermaid.live/)" >> docs/system-diagrams/ANALYSIS_REPORT.md
+        echo "- Download artifacts from this workflow run" >> docs/system-diagrams/ANALYSIS_REPORT.md
+    
+    - name: Upload analysis artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: system-analysis-${{ github.run_number }}
+        path: docs/system-diagrams/
+        retention-days: 90
+    
+    - name: Create release assets (on main branch)
+      if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
+      run: |
+        # Create a timestamped directory for release
+        TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
+        mkdir -p "releases/analysis_${TIMESTAMP}"
+        cp -r docs/system-diagrams/* "releases/analysis_${TIMESTAMP}/"
+        
+        # Create a latest symlink
+        rm -f releases/latest
+        ln -s "analysis_${TIMESTAMP}" releases/latest
+        
+        echo "📦 Analysis saved to releases/analysis_${TIMESTAMP}"
+    
+    - name: Summary
+      run: |
+        echo "🎉 System Architecture Analysis Complete!"
+        echo ""
+        echo "📊 Generated diagrams:"
+        ls -la docs/system-diagrams/
+        echo ""
+        echo "✅ Artifacts uploaded with 90-day retention"
+        if [ "${{ github.ref }}" = "refs/heads/main" ] || [ "${{ github.ref }}" = "refs/heads/master" ]; then
+          echo "✅ Release assets created"
+        fi 
