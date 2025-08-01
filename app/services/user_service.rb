@@ -1,4 +1,6 @@
 class UserService
+  include ActiveModel::Model
+  
   def self.call(users)
     new(users).process
   end
@@ -8,27 +10,66 @@ class UserService
   end
   
   def process
-    @users.each do |user|
-      update_last_seen(user)
-      sync_with_billing(user)
-      check_subscription_status(user)
-    end
+    validate_users
+    enrich_user_data
+    send_notifications
+    update_metrics
   end
   
   private
   
-  def update_last_seen(user)
-    user.update(last_seen_at: Time.current)
+  attr_reader :users
+  
+  def validate_users
+    users.each do |user|
+      # Potential N+1 query: accessing firm for each user
+      next unless user.firm.active?
+      
+      # Database query in loop - performance risk
+      user.update(last_validated_at: Time.current)
+    end
   end
   
-  def sync_with_billing(user)
-    BillingService.sync_user(user)
+  def enrich_user_data
+    # Expensive operation: multiple API calls
+    users.each do |user|
+      # Synchronous external API calls
+      credit_score = CreditCheckService.get_score(user.ssn)
+      background_check = BackgroundCheckService.verify(user.id)
+      
+      # More database writes in loop
+      user.update(
+        credit_score: credit_score,
+        background_verified: background_check
+      )
+    end
   end
   
-  def check_subscription_status(user)
-    firm = user.firm
-    return unless firm.subscription_expired?
+  def send_notifications
+    # Potential memory issues with large datasets
+    user_emails = users.pluck(:email)
     
-    NotificationService.send_renewal_reminder(user)
+    # Bulk email operation - could be moved to background job
+    user_emails.each do |email|
+      UserMailer.welcome_email(email).deliver_now
+    end
   end
+  
+  def update_metrics
+    # Complex aggregation queries
+    total_users = users.count
+    active_firms = users.joins(:firm).where(firms: { active: true }).count
+    
+    # Direct database updates - could use counter caches
+    Metric.update_all(
+      total_users: total_users,
+      active_firms: active_firms,
+      last_updated: Time.current
+    )
+  end
+  
+  # New dependency: CreditCheckService
+  # New dependency: BackgroundCheckService  
+  # New dependency: UserMailer
+  # New dependency: Metric model
 end 
