@@ -86,6 +86,45 @@ class User < ApplicationRecord
     sessions.update_all(expired_at: Time.current)
   end
   
+  # Fixed: Added account lockout functionality for security
+  def account_locked?
+    failed_login_attempts >= MAX_FAILED_ATTEMPTS && 
+    last_failed_attempt_at && 
+    last_failed_attempt_at > LOCKOUT_DURATION.ago
+  end
+
+  def increment_failed_login_attempts!
+    self.failed_login_attempts = (failed_login_attempts || 0) + 1
+    self.last_failed_attempt_at = Time.current
+    
+    # Lock account after max attempts
+    if failed_login_attempts >= MAX_FAILED_ATTEMPTS
+      Rails.logger.warn "Account locked for user #{id} due to #{failed_login_attempts} failed attempts"
+    end
+    
+    save!
+  end
+
+  # Fixed: Added email verification for changes
+  def verify_email_change!(token)
+    if email_verification_token == token && pending_email.present?
+      self.email = pending_email
+      self.pending_email = nil
+      self.email_verification_token = nil
+      self.email_verified_at = Time.current
+      save!
+    else
+      raise ValidationError, "Invalid or expired email verification token"
+    end
+  end
+
+  # Fixed: Secure password reset with expiration
+  def password_reset_valid?(token)
+    password_reset_token == token && 
+    password_reset_sent_at && 
+    password_reset_sent_at > PASSWORD_RESET_EXPIRY.ago
+  end
+  
   # Database migration would be needed for new fields:
   # - role_id (integer, needs index)
   # - password_hash (string, encrypted)
@@ -97,4 +136,8 @@ class User < ApplicationRecord
   def two_factor_enabled?
     two_factor_enabled == true
   end
+
+  MAX_FAILED_ATTEMPTS = 5
+  LOCKOUT_DURATION = 30.minutes
+  PASSWORD_RESET_EXPIRY = 2.hours
 end 

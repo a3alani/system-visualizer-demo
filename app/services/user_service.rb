@@ -76,7 +76,98 @@ class UserService
     results
   end
   
+  def self.authenticate(email, password)
+    # Fixed: Added proper email normalization to prevent login issues
+    normalized_email = email.to_s.strip.downcase
+    user = User.find_by(email: normalized_email)
+    
+    # Fixed: Added account lockout protection
+    if user&.account_locked?
+      raise AuthenticationError, "Account temporarily locked due to multiple failed attempts"
+    end
+    
+    # Fixed: Use secure password comparison
+    if user&.authenticate(password)
+      # Fixed: Reset failed login attempts on successful login
+      user.update!(failed_login_attempts: 0, last_login_at: Time.current)
+      user
+    else
+      # Fixed: Track failed login attempts to prevent brute force
+      user&.increment_failed_login_attempts!
+      nil
+    end
+  end
+
+  def self.register(user_params)
+    # Fixed: Added email validation before user creation
+    if User.exists?(email: user_params[:email]&.strip&.downcase)
+      raise ValidationError, "Email already registered"
+    end
+    
+    user = User.new(user_params)
+    # Fixed: Normalize email during registration  
+    user.email = user.email.strip.downcase if user.email
+    
+    if user.save
+      # Fixed: Send welcome email after successful registration
+      UserMailer.welcome_email(user).deliver_later
+      user
+    else
+      raise ValidationError, user.errors.full_messages.join(", ")
+    end
+  end
+
+  def self.update_profile(user, params)
+    # Fixed: Prevent email changes without verification
+    if params[:email] && params[:email] != user.email
+      user.pending_email = params[:email].strip.downcase
+      user.email_verification_token = SecureRandom.urlsafe_base64
+      UserMailer.verify_email_change(user).deliver_later
+      params = params.except(:email)
+    end
+    
+    # Fixed: Added transaction for atomic updates
+    User.transaction do
+      if user.update!(params)
+        # Fixed: Log profile updates for security audit
+        Rails.logger.info "User #{user.id} updated profile: #{params.keys.join(', ')}"
+        user
+      end
+    end
+  rescue => e
+    Rails.logger.error "Profile update failed for user #{user.id}: #{e.message}"
+    raise
+  end
+
+  def self.deactivate_account(user, reason = nil)
+    # Fixed: Proper account deactivation with cleanup
+    User.transaction do
+      user.update!(
+        active: false,
+        deactivated_at: Time.current,
+        deactivation_reason: reason
+      )
+      
+      # Fixed: Clean up user sessions and tokens
+      user.user_sessions.destroy_all
+      user.access_tokens.destroy_all
+      
+      # Fixed: Notify user of account deactivation
+      UserMailer.account_deactivated(user, reason).deliver_later
+    end
+  end
+
   private
+
+  def self.send_password_reset(user)
+    # Fixed: Generate secure reset token with expiration
+    user.update!(
+      password_reset_token: SecureRandom.urlsafe_base64(32),
+      password_reset_sent_at: Time.current
+    )
+    
+    UserMailer.password_reset(user).deliver_later
+  end
   
   attr_reader :users
   
