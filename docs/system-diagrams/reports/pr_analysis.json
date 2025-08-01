@@ -1,0 +1,72 @@
+{
+  "timestamp": "2025-08-01T10:38:05-0700",
+  "changed_files": [
+    "app/controllers/test_controller.rb",
+    "app/models/document.rb",
+    "app/models/firm.rb",
+    "app/models/user.rb",
+    "app/services/user_service.rb",
+    "app/workers/email_worker.rb"
+  ],
+  "ai_risk_score": {
+    "score": 34,
+    "level": "Medium",
+    "factors": {
+      "file_count": 6,
+      "model_changes": 3,
+      "controller_changes": 1,
+      "service_changes": 1,
+      "test_changes": 0
+    },
+    "recommendations": [
+      "Add tests for the changes to reduce risk"
+    ]
+  },
+  "performance_risks": {
+    "app/controllers/test_controller.rb": [
+      "Consider eager loading optimization"
+    ],
+    "app/models/firm.rb": [
+      "Consider eager loading optimization"
+    ],
+    "app/services/user_service.rb": [
+      "Consider eager loading optimization"
+    ],
+    "app/workers/email_worker.rb": [
+      "Consider eager loading optimization"
+    ]
+  },
+  "security_risks": {
+    "app/controllers/test_controller.rb": [
+      "Potential SQL injection"
+    ]
+  },
+  "database_impacts": {
+    "app/models/document.rb": [
+      "New associations may need indexes: user, firm, billing_category"
+    ],
+    "app/models/user.rb": [
+      "New associations may need indexes: firm, role, primary_contact, subscription_plan",
+      "Bulk data operations detected"
+    ],
+    "app/services/user_service.rb": [
+      "Bulk data operations detected"
+    ]
+  },
+  "test_impacts": {
+    "app/controllers/test_controller.rb": "No corresponding test file found",
+    "app/models/document.rb": "No corresponding test file found",
+    "app/models/firm.rb": "No corresponding test file found",
+    "app/models/user.rb": "No corresponding test file found",
+    "app/services/user_service.rb": "No corresponding test file found",
+    "app/workers/email_worker.rb": "No corresponding test file found"
+  },
+  "complexity_scores": {},
+  "summary": {
+    "total_files": 6,
+    "risk_level": "Medium",
+    "has_security_risks": true,
+    "has_performance_risks": true,
+    "has_db_impacts": true
+  }
+}
