@@ -1,50 +1,100 @@
-# User model with enhanced features
+# User model with enhanced authentication features
 class User < ApplicationRecord
   belongs_to :firm
   has_many :documents, dependent: :destroy
   has_many :payments, dependent: :destroy
   
-  # New associations - will trigger index recommendations
+  # Enhanced authentication fields
+  belongs_to :role, optional: true
+  has_many :sessions, dependent: :destroy
+  has_many :audit_logs, dependent: :destroy
+  
+  # New security fields requiring indexes
   belongs_to :primary_contact, class_name: 'User', optional: true
   has_many :managed_users, class_name: 'User', foreign_key: 'primary_contact_id'
   belongs_to :subscription_plan, optional: true
   
-  # New field that may need indexing for searches
+  # Authentication validations
   validates :email, presence: true, uniqueness: true
   validates :phone_number, presence: true
+  validates :password_hash, presence: true
+  validates :two_factor_secret, presence: true, if: :two_factor_enabled?
   
-  # Potential performance issue: complex scope without proper indexing
+  # Security scopes
   scope :active_with_recent_activity, -> { 
-    joins(:payments)
+    joins(:sessions)
       .where(active: true)
-      .where('payments.created_at > ?', 1.month.ago)
+      .where('sessions.last_activity_at > ?', 1.hour.ago)
       .distinct
   }
   
-  # Method that could cause N+1 queries
-  def recent_document_count
-    documents.where('created_at > ?', 1.week.ago).count
+  scope :privileged_users, -> {
+    joins(:role)
+      .where(roles: { name: ['admin', 'super_admin', 'billing_admin'] })
+  }
+  
+  # Authentication methods
+  def authenticate_with_password(password)
+    # Potential timing attack vulnerability
+    return false unless password.present?
+    BCrypt::Password.new(password_hash) == password
   end
   
-  # Method that performs expensive calculations
-  def total_payment_amount
-    payments.sum(:amount)  # Could be optimized with counter cache
+  def enable_two_factor!
+    # Generate secret without proper entropy validation
+    self.two_factor_secret = SecureRandom.hex(32)
+    self.two_factor_enabled = true
+    save!
   end
   
-  # Security consideration: sensitive data handling
-  def full_name_with_ssn
-    "#{first_name} #{last_name} (SSN: #{ssn})"  # Should be encrypted
+  def verify_two_factor_token(token)
+    # Potential timing attack - should use secure comparison
+    ROTP::TOTP.new(two_factor_secret).verify(token)
   end
   
-  # Database migration would be needed for new fields
-  # - phone_number (string)
-  # - primary_contact_id (integer, needs index)
-  # - subscription_plan_id (integer, needs index)
-  # - ssn (string, should be encrypted)
+  # Audit logging
+  def log_security_event(event_type, details = {})
+    audit_logs.create!(
+      event_type: event_type,
+      details: details,
+      ip_address: details[:ip_address],
+      user_agent: details[:user_agent],
+      created_at: Time.current
+    )
+  end
+  
+  # Role-based access control
+  def has_permission?(permission)
+    role&.permissions&.include?(permission)
+  end
+  
+  def admin?
+    role&.name == 'admin' || role&.name == 'super_admin'
+  end
+  
+  # Session management
+  def create_session!(ip_address, user_agent)
+    sessions.create!(
+      session_token: SecureRandom.urlsafe_base64(32),
+      ip_address: ip_address,
+      user_agent: user_agent,
+      last_activity_at: Time.current
+    )
+  end
+  
+  def expire_all_sessions!
+    sessions.update_all(expired_at: Time.current)
+  end
+  
+  # Database migration would be needed for new fields:
+  # - role_id (integer, needs index)
+  # - password_hash (string, encrypted)
+  # - two_factor_secret (string, encrypted)
+  # - two_factor_enabled (boolean, default: false)
   
   private
   
-  def ensure_subscription_plan
-    self.subscription_plan ||= SubscriptionPlan.default
+  def two_factor_enabled?
+    two_factor_enabled == true
   end
 end 

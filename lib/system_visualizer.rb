@@ -49,6 +49,9 @@ class SystemVisualizer
     # Get changed files from git diff
     changed_files = get_changed_files(base_branch)
     
+    # Get individual commits for granular analysis
+    commits = get_commits_in_pr(base_branch)
+    
     # Analyze only changed files and their dependencies
     changed_files.each do |file|
       case file
@@ -63,9 +66,15 @@ class SystemVisualizer
       end
     end
     
+    # Individual commit analysis
+    commit_analyses = analyze_individual_commits(commits, base_branch)
+    
     # Enhanced PR analysis
     perform_pr_enhanced_analysis(changed_files, base_branch)
     
+    # Generate both granular and cumulative reports
+    generate_commit_reports(commit_analyses)
+    generate_pr_timeline_analysis(commit_analyses)
     generate_pr_diagram(changed_files)
     generate_enhanced_pr_report(changed_files)
     puts "✅ PR analysis complete!"
@@ -280,6 +289,165 @@ class SystemVisualizer
     diff_output.split("\n").select do |file|
       file.start_with?('app/') && !file.empty?
     end
+  end
+
+  def get_commits_in_pr(base_branch)
+    # Get commits between base branch and current HEAD
+    commit_output = `git rev-list --reverse origin/#{base_branch}..HEAD 2>/dev/null`
+    if commit_output.empty?
+      commit_output = `git rev-list --reverse #{base_branch}..HEAD 2>/dev/null`
+    end
+    
+    commits = commit_output.split("\n").reject(&:empty?)
+    
+    # Get commit details
+    commits.map do |sha|
+      message = `git log -1 --pretty=format:"%s" #{sha}`.strip
+      author = `git log -1 --pretty=format:"%an" #{sha}`.strip
+      date = `git log -1 --pretty=format:"%ai" #{sha}`.strip
+      files = `git diff-tree --no-commit-id --name-only -r #{sha}`.split("\n").select { |f| f.start_with?('app/') }
+      
+      {
+        sha: sha,
+        short_sha: sha[0..7],
+        message: message,
+        author: author,
+        date: date,
+        files: files
+      }
+    end
+  end
+
+  def analyze_individual_commits(commits, base_branch)
+    puts "🔍 Analyzing #{commits.size} individual commits..."
+    
+    commit_analyses = []
+    
+    commits.each_with_index do |commit, index|
+      puts "   📍 Analyzing commit #{index + 1}/#{commits.size}: #{commit[:short_sha]}"
+      
+      # Analyze files changed in this specific commit
+      commit_data = {
+        commit: commit,
+        changed_files: commit[:files],
+        risks: analyze_commit_risks(commit),
+        impact_score: calculate_commit_impact_score(commit),
+        dependencies: analyze_commit_dependencies(commit)
+      }
+      
+      commit_analyses << commit_data
+    end
+    
+    commit_analyses
+  end
+
+  def analyze_commit_risks(commit)
+    risks = {
+      security: [],
+      performance: [],
+      database: [],
+      test_coverage: []
+    }
+    
+    commit[:files].each do |file|
+      next unless File.exist?(file)
+      
+      # Get the actual changes in this commit
+      diff_content = `git show #{commit[:sha]} -- #{file}`.strip
+      added_lines = diff_content.split("\n").select { |line| line.start_with?('+') && !line.start_with?('+++') }
+      
+      # Analyze added lines for risks
+      added_lines.each do |line|
+        clean_line = line[1..-1] # Remove the '+' prefix
+        
+        # Security risks
+        if clean_line.match?(/\.where\(.*#\{.*\}.*\)/)
+          risks[:security] << "SQL injection risk added"
+        end
+        if clean_line.match?(/params\.permit!|params\[.*\]\.permit!/)
+          risks[:security] << "Mass assignment vulnerability added"
+        end
+        if clean_line.match?(/html_safe|raw\(/)
+          risks[:security] << "XSS vulnerability risk added"
+        end
+        
+        # Performance risks
+        if clean_line.match?(/has_many.*\n.*\.each.*\n.*\.(find|where)/)
+          risks[:performance] << "Potential N+1 query pattern added"
+        end
+        if clean_line.match?(/(\.each|\.map|\.select).*\n.*\.(save|update|create|destroy)/)
+          risks[:performance] << "Heavy operation in loop added"
+        end
+        
+        # Database risks
+        if clean_line.match?(/belongs_to\s+:(\w+)/)
+          risks[:database] << "New association may need index"
+        end
+        if clean_line.match?(/add_column|remove_column|change_column/)
+          risks[:database] << "Schema change detected"
+        end
+      end
+      
+      # Test coverage
+      if file.match?(/^app\//) && !commit[:files].any? { |f| f.match?(/spec.*#{File.basename(file, '.rb')}/) }
+        risks[:test_coverage] << "No test file for #{File.basename(file)}"
+      end
+    end
+    
+    risks.reject { |_, v| v.empty? }
+  end
+
+  def calculate_commit_impact_score(commit)
+    score = 0
+    
+    # File type weights
+    commit[:files].each do |file|
+      case file
+      when /models/ then score += 5
+      when /controllers/ then score += 3
+      when /services/ then score += 4
+      when /workers/ then score += 2
+      when /migrations/ then score += 6
+      end
+    end
+    
+    # Number of files
+    score += commit[:files].size * 2
+    
+    # Commit message indicators
+    message = commit[:message].downcase
+    score += 3 if message.match?(/security|auth|password|login/)
+    score += 2 if message.match?(/performance|optimize|cache/)
+    score += 4 if message.match?(/database|migration|schema/)
+    score += 1 if message.match?(/test|spec/)
+    
+    # Cap at 100
+    [score, 100].min
+  end
+
+  def analyze_commit_dependencies(commit)
+    dependencies = Set.new
+    
+    commit[:files].each do |file|
+      next unless File.exist?(file)
+      
+      content = File.read(file)
+      
+      # Extract dependencies based on file type
+      case file
+      when /models/
+        content.scan(/belongs_to\s+:(\w+)/) { |match| dependencies << classify_string(match[0]) }
+        content.scan(/has_many\s+:(\w+)/) { |match| dependencies << classify_string(match[0]) }
+      when /controllers/
+        content.scan(/(\w+)\.find/) { |match| dependencies << classify_string(match[0]) }
+        content.scan(/(\w+)Service\./) { |match| dependencies << "#{match[0]}Service" }
+      when /services/
+        content.scan(/(\w+)\.find/) { |match| dependencies << classify_string(match[0]) }
+        content.scan(/(\w+)Service\./) { |match| dependencies << "#{match[0]}Service" }
+      end
+    end
+    
+    dependencies.to_a
   end
 
   def generate_diagrams
@@ -1938,7 +2106,9 @@ class SystemVisualizer
     comment << "View the complete analysis in the generated reports:\n"
     comment << "- [Risk Assessment](./docs/system-diagrams/reports/pr_risk_assessment.md)\n"
     comment << "- [Impact Summary](./docs/system-diagrams/reports/pr_impact_summary.md)\n"
-    comment << "- [Visual Diagram](./docs/system-diagrams/reports/enhanced_pr_report.md)\n\n"
+    comment << "- [Visual Diagram](./docs/system-diagrams/reports/enhanced_pr_report.md)\n"
+    comment << "- [📈 Timeline Analysis](./docs/system-diagrams/reports/pr_timeline.md)\n"
+    comment << "- [📚 Commit Analysis Index](./docs/system-diagrams/commits/index.md)\n\n"
     
     comment << "<details>\n<summary>🎯 View Dependency Diagram</summary>\n\n"
     comment << "```mermaid\n"
@@ -1950,6 +2120,320 @@ class SystemVisualizer
     comment << "_Generated by System Visualizer at #{Time.now.strftime("%Y-%m-%d %H:%M:%S")}_"
     
     File.write("#{output_path}/reports/github_comment.md", comment)
+  end
+
+  def generate_commit_reports(commit_analyses)
+    return if commit_analyses.empty?
+    
+    puts "📊 Generating individual commit reports..."
+    
+    # Create commits directory
+    commits_dir = "#{output_path}/commits"
+    FileUtils.mkdir_p(commits_dir)
+    
+    commit_analyses.each_with_index do |analysis, index|
+      commit = analysis[:commit]
+      
+      # Generate small diagram for this commit
+      generate_commit_diagram(analysis, index + 1)
+      
+      # Generate commit summary
+      generate_commit_summary(analysis, index + 1)
+    end
+    
+    # Generate commit index
+    generate_commit_index(commit_analyses)
+  end
+
+  def generate_commit_diagram(analysis, commit_number)
+    commit = analysis[:commit]
+    mermaid = String.new("")
+    
+    mermaid << "graph TD\n"
+    mermaid << "  subgraph \"Commit #{commit_number}: #{commit[:short_sha]}\"\n"
+    
+    # Add commit info
+    risk_class = case analysis[:impact_score]
+                 when 0..20 then "lowRisk"
+                 when 21..50 then "mediumRisk"
+                 when 51..80 then "highRisk"
+                 else "criticalRisk"
+                 end
+    
+    mermaid << "    CommitInfo[\"📝 #{commit[:short_sha]}<br/>Impact: #{analysis[:impact_score]}/100<br/>Files: #{analysis[:changed_files].size}\"]:::#{risk_class}\n"
+    
+    # Add changed files
+    if analysis[:changed_files].any?
+      mermaid << "    subgraph \"Changed Files\"\n"
+      analysis[:changed_files].each do |file|
+        file_name = File.basename(file, '.rb')
+        file_class = case file
+                     when /models/ then "modelFile"
+                     when /controllers/ then "controllerFile"
+                     when /services/ then "serviceFile"
+                     when /workers/ then "workerFile"
+                     else "otherFile"
+                     end
+        mermaid << "      #{file_name.gsub(/[^a-zA-Z0-9]/, '_')}[#{file_name}]:::#{file_class}\n"
+      end
+      mermaid << "    end\n"
+    end
+    
+    # Add risks if any
+    analysis[:risks].each do |risk_type, risks|
+      next if risks.empty?
+      
+      risk_emoji = case risk_type
+                   when :security then "🔒"
+                   when :performance then "⚡"
+                   when :database then "🗄️"
+                   when :test_coverage then "🧪"
+                   end
+      
+             mermaid << "    #{risk_type.to_s.capitalize}Risks[\"#{risk_emoji} #{humanize_string(risk_type)}<br/>#{risks.size} issues\"]:::#{risk_type}Risk\n"
+      mermaid << "    CommitInfo --> #{risk_type.to_s.capitalize}Risks\n"
+    end
+    
+    mermaid << "  end\n\n"
+    
+    # Add styling
+    mermaid << "  classDef lowRisk fill:#ccffcc,stroke:#00cc00,stroke-width:2px\n"
+    mermaid << "  classDef mediumRisk fill:#ffffcc,stroke:#ffaa00,stroke-width:2px\n"
+    mermaid << "  classDef highRisk fill:#ffcccc,stroke:#ff6600,stroke-width:2px\n"
+    mermaid << "  classDef criticalRisk fill:#ff6666,stroke:#cc0000,stroke-width:3px\n"
+    mermaid << "  classDef modelFile fill:#e1f5fe,stroke:#0277bd,stroke-width:2px\n"
+    mermaid << "  classDef controllerFile fill:#f3e5f5,stroke:#7b1fa2,stroke-width:2px\n"
+    mermaid << "  classDef serviceFile fill:#e8f5e8,stroke:#388e3c,stroke-width:2px\n"
+    mermaid << "  classDef workerFile fill:#fff3e0,stroke:#f57c00,stroke-width:2px\n"
+    mermaid << "  classDef securityRisk fill:#ffebee,stroke:#d32f2f,stroke-width:2px\n"
+    mermaid << "  classDef performanceRisk fill:#fff8e1,stroke:#ffa000,stroke-width:2px\n"
+    mermaid << "  classDef databaseRisk fill:#e3f2fd,stroke:#1976d2,stroke-width:2px\n"
+    mermaid << "  classDef test_coverageRisk fill:#f1f8e9,stroke:#689f38,stroke-width:2px\n"
+    
+    File.write("#{output_path}/commits/commit_#{commit_number}_#{commit[:short_sha]}.md", mermaid)
+  end
+
+  def generate_commit_summary(analysis, commit_number)
+    commit = analysis[:commit]
+    content = String.new("# 📝 Commit #{commit_number}: #{commit[:short_sha]}\n\n")
+    
+    content << "## ℹ️ Commit Information\n\n"
+    content << "- **SHA:** `#{commit[:sha]}`\n"
+    content << "- **Author:** #{commit[:author]}\n"
+    content << "- **Date:** #{commit[:date]}\n"
+    content << "- **Message:** #{commit[:message]}\n"
+    content << "- **Impact Score:** #{analysis[:impact_score]}/100\n"
+    content << "- **Files Changed:** #{analysis[:changed_files].size}\n\n"
+    
+    if analysis[:changed_files].any?
+      content << "## 📁 Changed Files\n\n"
+      analysis[:changed_files].each do |file|
+        content << "- `#{file}`\n"
+      end
+      content << "\n"
+    end
+    
+    if analysis[:risks].any?
+      content << "## ⚠️ Risk Analysis\n\n"
+      analysis[:risks].each do |risk_type, risks|
+        emoji = case risk_type
+                when :security then "🔒"
+                when :performance then "⚡"
+                when :database then "🗄️"
+                when :test_coverage then "🧪"
+                end
+        
+                 content << "### #{emoji} #{humanize_string(risk_type)} (#{risks.size} issues)\n\n"
+        risks.each { |risk| content << "- #{risk}\n" }
+        content << "\n"
+      end
+    end
+    
+    if analysis[:dependencies].any?
+      content << "## 🔗 Dependencies\n\n"
+      analysis[:dependencies].each { |dep| content << "- #{dep}\n" }
+      content << "\n"
+    end
+    
+    File.write("#{output_path}/commits/commit_#{commit_number}_#{commit[:short_sha]}_summary.md", content)
+  end
+
+  def generate_commit_index(commit_analyses)
+    content = String.new("# 📚 Commit Analysis Index\n\n")
+    content << "This PR contains #{commit_analyses.size} commits with individual analysis.\n\n"
+    
+    # Summary table
+    content << "## 📊 Summary\n\n"
+    content << "| Commit | SHA | Impact | Security | Performance | Database | Files |\n"
+    content << "|--------|-----|--------|----------|-------------|----------|-------|\n"
+    
+    commit_analyses.each_with_index do |analysis, index|
+      commit = analysis[:commit]
+      security_count = analysis[:risks][:security]&.size || 0
+      performance_count = analysis[:risks][:performance]&.size || 0
+      database_count = analysis[:risks][:database]&.size || 0
+      
+      content << "| #{index + 1} | `#{commit[:short_sha]}` | #{analysis[:impact_score]}/100 | #{security_count} | #{performance_count} | #{database_count} | #{analysis[:changed_files].size} |\n"
+    end
+    content << "\n"
+    
+    # Individual commit links
+    content << "## 📝 Individual Commit Analysis\n\n"
+    commit_analyses.each_with_index do |analysis, index|
+      commit = analysis[:commit]
+      content << "### Commit #{index + 1}: #{commit[:short_sha]} - #{commit[:message]}\n\n"
+      content << "- **Impact Score:** #{analysis[:impact_score]}/100\n"
+      content << "- **Files Changed:** #{analysis[:changed_files].size}\n"
+      content << "- **Risk Categories:** #{analysis[:risks].keys.join(', ')}\n"
+      content << "- **[View Diagram](./commit_#{index + 1}_#{commit[:short_sha]}.md)**\n"
+      content << "- **[View Summary](./commit_#{index + 1}_#{commit[:short_sha]}_summary.md)**\n\n"
+    end
+    
+    File.write("#{output_path}/commits/index.md", content)
+  end
+
+  def generate_pr_timeline_analysis(commit_analyses)
+    return if commit_analyses.empty?
+    
+    puts "📈 Generating PR timeline analysis..."
+    
+    # Timeline diagram showing risk progression
+    mermaid = String.new("")
+    mermaid << "graph LR\n"
+    mermaid << "  subgraph \"PR Timeline: Risk Progression\"\n"
+    
+    # Add timeline nodes
+    commit_analyses.each_with_index do |analysis, index|
+      commit = analysis[:commit]
+      
+      risk_class = case analysis[:impact_score]
+                   when 0..20 then "lowRisk"
+                   when 21..50 then "mediumRisk"
+                   when 51..80 then "highRisk"
+                   else "criticalRisk"
+                   end
+      
+      # Risk indicators
+      security_indicator = analysis[:risks][:security]&.any? ? "🔒" : ""
+      performance_indicator = analysis[:risks][:performance]&.any? ? "⚡" : ""
+      database_indicator = analysis[:risks][:database]&.any? ? "🗄️" : ""
+      
+      mermaid << "    C#{index + 1}[\"#{commit[:short_sha]}<br/>Impact: #{analysis[:impact_score]}<br/>#{security_indicator}#{performance_indicator}#{database_indicator}\"]:::#{risk_class}\n"
+      
+      # Connect to next commit
+      if index < commit_analyses.size - 1
+        mermaid << "    C#{index + 1} --> C#{index + 2}\n"
+      end
+    end
+    
+    mermaid << "  end\n\n"
+    
+    # Cumulative risk chart
+    mermaid << "  subgraph \"Cumulative Risk Analysis\"\n"
+    
+    total_security = 0
+    total_performance = 0
+    total_database = 0
+    
+    commit_analyses.each_with_index do |analysis, index|
+      total_security += analysis[:risks][:security]&.size || 0
+      total_performance += analysis[:risks][:performance]&.size || 0
+      total_database += analysis[:risks][:database]&.size || 0
+      
+      if index == commit_analyses.size - 1 # Last commit
+        mermaid << "    FinalRisks[\"Final State<br/>🔒 Security: #{total_security}<br/>⚡ Performance: #{total_performance}<br/>🗄️ Database: #{total_database}\"]:::finalState\n"
+      end
+    end
+    
+    mermaid << "  end\n\n"
+    
+    # Connect timeline to final state
+    if commit_analyses.any?
+      mermaid << "  C#{commit_analyses.size} --> FinalRisks\n"
+    end
+    
+    # Add styling
+    mermaid << "  classDef lowRisk fill:#ccffcc,stroke:#00cc00,stroke-width:2px\n"
+    mermaid << "  classDef mediumRisk fill:#ffffcc,stroke:#ffaa00,stroke-width:2px\n"
+    mermaid << "  classDef highRisk fill:#ffcccc,stroke:#ff6600,stroke-width:2px\n"
+    mermaid << "  classDef criticalRisk fill:#ff6666,stroke:#cc0000,stroke-width:3px\n"
+    mermaid << "  classDef finalState fill:#e1f5fe,stroke:#0277bd,stroke-width:3px\n"
+    
+    File.write("#{output_path}/reports/pr_timeline.md", mermaid)
+    
+    # Generate timeline summary report
+    generate_timeline_summary(commit_analyses)
+  end
+
+  def generate_timeline_summary(commit_analyses)
+    content = String.new("# 📈 PR Timeline Analysis\n\n")
+    
+    content << "## 🎯 Overview\n\n"
+    content << "This PR progressed through #{commit_analyses.size} commits with varying risk levels.\n\n"
+    
+    # Risk progression table
+    content << "## 📊 Risk Progression\n\n"
+    content << "| Commit | Impact Score | Security Risks | Performance Risks | Database Risks | Total Risk Score |\n"
+    content << "|--------|--------------|----------------|-------------------|----------------|------------------|\n"
+    
+    commit_analyses.each_with_index do |analysis, index|
+      commit = analysis[:commit]
+      security_count = analysis[:risks][:security]&.size || 0
+      performance_count = analysis[:risks][:performance]&.size || 0
+      database_count = analysis[:risks][:database]&.size || 0
+      total_risks = security_count + performance_count + database_count
+      
+      content << "| #{index + 1} (#{commit[:short_sha]}) | #{analysis[:impact_score]} | #{security_count} | #{performance_count} | #{database_count} | #{total_risks} |\n"
+    end
+    content << "\n"
+    
+    # Key insights
+    content << "## 💡 Key Insights\n\n"
+    
+    highest_impact = commit_analyses.max_by { |a| a[:impact_score] }
+    if highest_impact
+      commit_num = commit_analyses.index(highest_impact) + 1
+      content << "- **Highest Impact Commit:** ##{commit_num} (`#{highest_impact[:commit][:short_sha]}`) with impact score #{highest_impact[:impact_score]}/100\n"
+    end
+    
+    security_commits = commit_analyses.select { |a| a[:risks][:security]&.any? }
+    if security_commits.any?
+      content << "- **Security Risks Introduced:** #{security_commits.size} commits introduced security vulnerabilities\n"
+    end
+    
+    performance_commits = commit_analyses.select { |a| a[:risks][:performance]&.any? }
+    if performance_commits.any?
+      content << "- **Performance Concerns:** #{performance_commits.size} commits introduced performance risks\n"
+    end
+    
+    database_commits = commit_analyses.select { |a| a[:risks][:database]&.any? }
+    if database_commits.any?
+      content << "- **Database Impact:** #{database_commits.size} commits require database considerations\n"
+    end
+    
+    content << "\n## 🎯 Recommendations\n\n"
+    
+    total_security_risks = commit_analyses.sum { |a| a[:risks][:security]&.size || 0 }
+    total_performance_risks = commit_analyses.sum { |a| a[:risks][:performance]&.size || 0 }
+    total_database_risks = commit_analyses.sum { |a| a[:risks][:database]&.size || 0 }
+    
+    if total_security_risks > 0
+      content << "- 🔒 **Security Review Required:** #{total_security_risks} security issues detected across commits\n"
+    end
+    
+    if total_performance_risks > 0
+      content << "- ⚡ **Performance Testing Recommended:** #{total_performance_risks} performance concerns identified\n"
+    end
+    
+    if total_database_risks > 0
+      content << "- 🗄️ **Database Review Needed:** #{total_database_risks} database-related changes require attention\n"
+    end
+    
+    if commit_analyses.any? { |a| a[:risks][:test_coverage]&.any? }
+      content << "- 🧪 **Add Tests:** Multiple commits lack corresponding test coverage\n"
+    end
+    
+    File.write("#{output_path}/reports/pr_timeline_summary.md", content)
   end
 
   private

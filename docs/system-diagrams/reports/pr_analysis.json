@@ -1,28 +1,51 @@
 {
-  "timestamp": "2025-08-01T09:53:30-0700",
-  "changed_files": [],
+  "timestamp": "2025-08-01T10:09:31-0700",
+  "changed_files": [
+    "app/controllers/test_controller.rb",
+    "app/models/user.rb",
+    "app/services/user_service.rb"
+  ],
   "ai_risk_score": {
-    "score": 0,
+    "score": 18,
     "level": "Low",
     "factors": {
-      "file_count": 0,
-      "model_changes": 0,
-      "controller_changes": 0,
-      "service_changes": 0,
+      "file_count": 3,
+      "model_changes": 1,
+      "controller_changes": 1,
+      "service_changes": 1,
       "test_changes": 0
     },
-    "recommendations": []
+    "recommendations": [
+      "Add tests for the changes to reduce risk"
+    ]
   },
   "performance_risks": {},
-  "security_risks": {},
-  "database_impacts": {},
-  "test_impacts": {},
+  "security_risks": {
+    "app/controllers/test_controller.rb": [
+      "Mass assignment vulnerability",
+      "Potential SQL injection",
+      "Potential XSS vulnerability"
+    ]
+  },
+  "database_impacts": {
+    "app/models/user.rb": [
+      "New associations may need indexes: firm, primary_contact, subscription_plan"
+    ],
+    "app/services/user_service.rb": [
+      "Bulk data operations detected"
+    ]
+  },
+  "test_impacts": {
+    "app/controllers/test_controller.rb": "No corresponding test file found",
+    "app/models/user.rb": "No corresponding test file found",
+    "app/services/user_service.rb": "No corresponding test file found"
+  },
   "complexity_scores": {},
   "summary": {
-    "total_files": 0,
+    "total_files": 3,
     "risk_level": "Low",
-    "has_security_risks": false,
+    "has_security_risks": true,
     "has_performance_risks": false,
-    "has_db_impacts": false
+    "has_db_impacts": true
   }
 }

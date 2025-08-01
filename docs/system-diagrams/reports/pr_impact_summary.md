@@ -4,14 +4,21 @@
 
 | Metric | Count |
 |--------|-------|
-| Total Files Changed | 0 |
-| Models Modified | 0 |
-| Controllers Modified | 0 |
-| Services Modified | 0 |
+| Total Files Changed | 3 |
+| Models Modified | 1 |
+| Controllers Modified | 1 |
+| Services Modified | 1 |
 | Workers Modified | 0 |
 | Test Files Modified | 0 |
 
 ## 🎯 Impact Areas
+
+### User Management
+- `app/models/user.rb`
+- `app/services/user_service.rb`
+
+### API/Controllers
+- `app/controllers/test_controller.rb`
 
 ## 🚦 Risk Level Summary
 
