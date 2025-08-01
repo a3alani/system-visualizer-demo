@@ -20,12 +20,9 @@
 ### 🔒 Security (3 issues)
 
 - SQL injection risk added
-- Mass assignment vulnerability added
-- XSS vulnerability risk added
 
 ### 🗄️ Database (2 issues)
 
-- New association may need index
 - New association may need index
 
 ### 🧪 Test Coverage (3 issues)
@@ -36,12 +33,19 @@
 
 ## 🔗 Dependencies
 
+- User
+- Session
 - Firm
+- Role
 - PrimaryContact
 - SubscriptionPlan
 - Documents
 - Payments
+- Sessions
+- AuditLogs
 - ManagedUsers
 - CreditCheckService
-- BackgroundCheckService
+- PaymentHistoryService
+- FraudDetectionService
+- PaymentMethodService
 
