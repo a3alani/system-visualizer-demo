@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>System Visualizer Demo</title>
+    <script src="https://cdn.jsdelivr.net/npm/mermaid@10.6.1/dist/mermaid.min.js"></script>
+    <style>
+        body { font-family: Arial, sans-serif; padding: 20px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; }
+        .demo { background: rgba(255,255,255,0.1); padding: 20px; margin: 20px 0; border-radius: 10px; }
+        .mermaid { background: white; padding: 20px; border-radius: 5px; margin: 10px 0; }
+        h1 { text-align: center; font-size: 2.5em; }
+        .impact-high { color: #ff6666; font-weight: bold; }
+        .impact-medium { color: #ffaa66; font-weight: bold; }
+        .impact-low { color: #66ff66; font-weight: bold; }
+    </style>
+</head>
+<body>
+    <h1>🔍 System Visualizer - Hackathon Demo</h1>
+    
+    <div class="demo">
+        <h2>🚀 Demo 1: Authentication System Changes</h2>
+        <p><strong>Impact:</strong> <span class="impact-high">High</span></p>
+        <div class="mermaid">
+graph TD
+    User["User<br/>app/models/user.rb<br/>Impact: High"]
+    SessionsController["SessionsController<br/>app/controllers/sessions_controller.rb<br/>Impact: High"]
+    Authentication["Authentication<br/>app/models/authentication.rb<br/>Impact: High"]
+    
+    User --> |high impact| SystemCore
+    SessionsController --> |high impact| SystemCore
+    Authentication --> |high impact| SystemCore
+    
+    classDef highImpact fill:#ff6666
+    class User,SessionsController,Authentication highImpact
+        </div>
+    </div>
+
+    <div class="demo">
+        <h2>💳 Demo 2: Payment Processing Updates</h2>
+        <p><strong>Impact:</strong> <span class="impact-medium">Medium</span></p>
+        <div class="mermaid">
+graph TD
+    Payment["Payment<br/>app/models/payment.rb<br/>Impact: Medium"]
+    PaymentsController["PaymentsController<br/>app/controllers/payments_controller.rb<br/>Impact: Medium"]
+    PaymentService["PaymentService<br/>app/services/payment_service.rb<br/>Impact: Medium"]
+    
+    Payment --> |medium impact| SystemCore
+    PaymentsController --> |medium impact| SystemCore
+    PaymentService --> |medium impact| SystemCore
+    
+    classDef mediumImpact fill:#ffaa66
+    class Payment,PaymentsController,PaymentService mediumImpact
+        </div>
+    </div>
+
+    <div class="demo">
+        <h2>📄 Demo 3: Document Management Feature</h2>
+        <p><strong>Impact:</strong> <span class="impact-low">Low</span></p>
+        <div class="mermaid">
+graph TD
+    Document["Document<br/>app/models/document.rb<br/>Impact: Low"]
+    DocumentProcessor["DocumentProcessor<br/>app/workers/document_processor.rb<br/>Impact: Low"]
+    
+    Document --> |low impact| SystemCore
+    DocumentProcessor --> |low impact| SystemCore
+    
+    classDef lowImpact fill:#66ff66
+    class Document,DocumentProcessor lowImpact
+        </div>
+    </div>
+
+    <script>
+        mermaid.initialize({ startOnLoad: true });
+    </script>
+</body>
+</html>
