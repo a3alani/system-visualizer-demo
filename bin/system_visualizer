@@ -5,17 +5,37 @@ require_relative '../lib/system_visualizer'
 
 def show_usage
   puts <<~USAGE
-    System Visualizer - Rails Codebase Analysis Tool
+    System Visualizer - Enhanced Rails Codebase Analysis Tool
     
-    Usage:
-      bin/system_visualizer analyze                    # Analyze entire codebase
-      bin/system_visualizer pr [base_branch]          # Analyze PR changes (default: main)
-      bin/system_visualizer help                      # Show this help
+    Commands:
+      analyze                                   # Full codebase analysis with enhanced features
+      pr [base_branch]                         # Enhanced PR analysis (default: main)
+      risk-assessment [base_branch]            # Focus on security & performance risks
+      export [format] [base_branch]            # Export analysis in different formats
+      test-coverage                            # Analyze test coverage and gaps
+      complexity                               # Generate complexity analysis report
+      help                                     # Show this help
+    
+    Options for 'export':
+      --format html|json|github|all           # Export format (default: all)
+      --output PATH                           # Custom output directory
+    
+    Enhanced Features:
+      🔍 AI-powered risk scoring
+      ⚡ Performance impact analysis 
+      🔒 Security vulnerability detection
+      🗄️ Database impact assessment
+      🧪 Test coverage analysis
+      📊 Interactive HTML reports
+      🚀 GitHub integration ready
     
     Examples:
-      bin/system_visualizer analyze
-      bin/system_visualizer pr main
-      bin/system_visualizer pr develop
+      bin/system_visualizer analyze                    # Full enhanced analysis
+      bin/system_visualizer pr main                    # Enhanced PR analysis  
+      bin/system_visualizer risk-assessment develop   # Security & performance focus
+      bin/system_visualizer export html main          # Export PR analysis as HTML
+      bin/system_visualizer test-coverage             # Test coverage report
+      bin/system_visualizer complexity                # Complexity analysis
   USAGE
 end
 
@@ -24,22 +44,90 @@ def main
   
   case command
   when 'analyze'
+    puts "🚀 Starting enhanced codebase analysis..."
     visualizer = SystemVisualizer.new
     visualizer.analyze
+    puts "✅ Enhanced analysis complete! Check docs/system-diagrams/ for all reports."
+    
   when 'pr'
     base_branch = ARGV[1] || 'main'
+    puts "🔍 Starting enhanced PR analysis against #{base_branch}..."
     visualizer = SystemVisualizer.new
     visualizer.analyze_pr_changes(base_branch)
+    puts "✅ Enhanced PR analysis complete! Check docs/system-diagrams/reports/ for detailed reports."
+    
+  when 'risk-assessment'
+    base_branch = ARGV[1] || 'main'
+    puts "🚨 Starting risk assessment analysis..."
+    visualizer = SystemVisualizer.new
+    visualizer.analyze_pr_changes(base_branch)
+    puts "✅ Risk assessment complete! Focus on:"
+    puts "   - docs/system-diagrams/reports/pr_risk_assessment.md"
+    puts "   - docs/system-diagrams/reports/pr_analysis_report.html"
+    
+  when 'export'
+    format = ARGV[1] || 'all'
+    base_branch = ARGV[2] || 'main'
+    output_dir = nil
+    
+    # Parse options
+    ARGV.each_with_index do |arg, i|
+      if arg == '--output' && ARGV[i + 1]
+        output_dir = ARGV[i + 1]
+      end
+    end
+    
+    puts "📤 Exporting analysis in #{format} format..."
+    visualizer = SystemVisualizer.new(output_path: output_dir) if output_dir
+    visualizer ||= SystemVisualizer.new
+    visualizer.analyze_pr_changes(base_branch)
+    
+    case format
+    when 'html'
+      puts "✅ HTML report generated: docs/system-diagrams/reports/pr_analysis_report.html"
+    when 'json'
+      puts "✅ JSON export generated: docs/system-diagrams/reports/pr_analysis.json"
+    when 'github'
+      puts "✅ GitHub comment format: docs/system-diagrams/reports/github_comment.md"
+    when 'all'
+      puts "✅ All formats exported to docs/system-diagrams/reports/"
+    else
+      puts "❌ Unknown format: #{format}. Use: html, json, github, or all"
+      exit 1
+    end
+    
+  when 'test-coverage'
+    puts "🧪 Analyzing test coverage..."
+    visualizer = SystemVisualizer.new
+    visualizer.analyze
+    puts "✅ Test coverage analysis complete! Check:"
+    puts "   - docs/system-diagrams/reports/test_coverage.md"
+    
+  when 'complexity'
+    puts "📊 Generating complexity analysis..."
+    visualizer = SystemVisualizer.new
+    visualizer.analyze
+    puts "✅ Complexity analysis complete! Check:"
+    puts "   - docs/system-diagrams/reports/complexity.md"
+    puts "   - docs/system-diagrams/circular-dependency-analysis.md"
+    
   when 'help', '--help', '-h', nil
     show_usage
+    
   else
-    puts "Unknown command: #{command}"
+    puts "❌ Unknown command: #{command}"
+    puts ""
     show_usage
     exit 1
   end
+  
 rescue => e
-  puts "Error: #{e.message}"
+  puts "💥 Error: #{e.message}"
+  puts ""
+  puts "Debug information:"
   puts e.backtrace.first(5)
+  puts ""
+  puts "💡 Try running with 'help' command for usage information"
   exit 1
 end
 
