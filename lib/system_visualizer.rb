@@ -404,16 +404,15 @@ class SystemVisualizer
         dependency_count = data[:dependencies].size
         
         # Color code based on complexity
-        color = if dependency_count > 10
-                  "style=\"fill:#ffcccc\""
-                elsif dependency_count > 5
-                  "style=\"fill:#ffffcc\""
-                else
-                  "style=\"fill:#ccffcc\""
-                end
+        complexity_class = if dependency_count > 10
+                             "highComplexity"
+                           elsif dependency_count > 5
+                             "mediumComplexity"
+                           else
+                             "lowComplexity"
+                           end
         
-        mermaid << "    #{model_name}[#{model_name}<br/>#{association_count} assoc, #{dependency_count} deps]\n"
-        mermaid << "    #{model_name} #{color}\n"
+        mermaid << "    #{model_name}[#{model_name}<br/>#{association_count} assoc, #{dependency_count} deps]:::#{complexity_class}\n"
       end
       mermaid << "  end\n\n"
     end
@@ -437,6 +436,11 @@ class SystemVisualizer
         end
       end
     end
+    
+    # Add class definitions for styling
+    mermaid << "\n  classDef highComplexity fill:#ffcccc,stroke:#ff6666,stroke-width:2px\n"
+    mermaid << "  classDef mediumComplexity fill:#ffffcc,stroke:#ffaa66,stroke-width:2px\n"
+    mermaid << "  classDef lowComplexity fill:#ccffcc,stroke:#66ff66,stroke-width:2px\n"
     
     File.write("#{output_path}/models.md", mermaid)
   end
@@ -534,15 +538,14 @@ class SystemVisualizer
     
     mermaid << "    subgraph \"Most Referenced Models\"\n"
     top_dependent_models.each do |model_name, count|
-      color = if count > 20
-                "style=\"fill:#ff6666\""
-              elsif count > 10
-                "style=\"fill:#ffaa66\""
-              else
-                "style=\"fill:#66ff66\""
-              end
-              mermaid << "      #{model_name}[#{model_name}<br/>#{count} references]\n"
-        mermaid << "      #{model_name} #{color}\n"
+      impact_class = if count > 20
+                       "highImpact"
+                     elsif count > 10
+                       "mediumImpact"
+                     else
+                       "lowImpact"
+                     end
+      mermaid << "      #{model_name}[#{model_name}<br/>#{count} references]:::#{impact_class}\n"
     end
     mermaid << "    end\n"
     
@@ -550,15 +553,14 @@ class SystemVisualizer
     most_dependent = @models.sort_by { |_, data| data[:dependencies].size }.reverse.first(10)
     mermaid << "    subgraph \"Models with Most Dependencies\"\n"
     most_dependent.each do |model_name, data|
-      color = if data[:dependencies].size > 15
-                "style=\"fill:#ff6666\""
-              elsif data[:dependencies].size > 8
-                "style=\"fill:#ffaa66\""
-              else
-                "style=\"fill:#66ff66\""
-              end
-              mermaid << "      #{model_name}[#{model_name}<br/>#{data[:dependencies].size} deps]\n"
-        mermaid << "      #{model_name} #{color}\n"
+      complexity_class = if data[:dependencies].size > 15
+                           "highComplexity"
+                         elsif data[:dependencies].size > 8
+                           "mediumComplexity"
+                         else
+                           "lowComplexity"
+                         end
+      mermaid << "      #{model_name}[#{model_name}<br/>#{data[:dependencies].size} deps]:::#{complexity_class}\n"
     end
     mermaid << "    end\n"
     
@@ -573,6 +575,14 @@ class SystemVisualizer
         end
       end
     end
+    
+    # Add class definitions for styling
+    mermaid << "\n  classDef highImpact fill:#ff6666,stroke:#cc0000,stroke-width:2px\n"
+    mermaid << "  classDef mediumImpact fill:#ffaa66,stroke:#cc6600,stroke-width:2px\n"
+    mermaid << "  classDef lowImpact fill:#66ff66,stroke:#00cc00,stroke-width:2px\n"
+    mermaid << "  classDef highComplexity fill:#ffcccc,stroke:#ff6666,stroke-width:2px\n"
+    mermaid << "  classDef mediumComplexity fill:#ffffcc,stroke:#ffaa66,stroke-width:2px\n"
+    mermaid << "  classDef lowComplexity fill:#ccffcc,stroke:#66ff66,stroke-width:2px\n"
     
     File.write("#{output_path}/dependency-analysis.md", mermaid)
   end
@@ -591,16 +601,15 @@ class SystemVisualizer
         data = @services[service_name]
         dependency_count = data[:dependencies].size
         
-        color = if dependency_count > 8
-                  "style=\"fill:#ffcccc\""
-                elsif dependency_count > 4
-                  "style=\"fill:#ffffcc\""
-                else
-                  "style=\"fill:#ccffcc\""
-                end
+        complexity_class = if dependency_count > 8
+                             "highComplexity"
+                           elsif dependency_count > 4
+                             "mediumComplexity"
+                           else
+                             "lowComplexity"
+                           end
         
-        mermaid << "      #{service_name}[#{service_name}<br/>#{dependency_count} deps]\n"
-        mermaid << "      #{service_name} #{color}\n"
+        mermaid << "      #{service_name}[#{service_name}<br/>#{dependency_count} deps]:::#{complexity_class}\n"
       end
       mermaid << "    end\n"
     end
@@ -619,6 +628,11 @@ class SystemVisualizer
         end
       end
     end
+    
+    # Add class definitions for styling
+    mermaid << "\n  classDef highComplexity fill:#ffcccc,stroke:#ff6666,stroke-width:2px\n"
+    mermaid << "  classDef mediumComplexity fill:#ffffcc,stroke:#ffaa66,stroke-width:2px\n"
+    mermaid << "  classDef lowComplexity fill:#ccffcc,stroke:#66ff66,stroke-width:2px\n"
     
     File.write("#{output_path}/service-dependency-map.md", mermaid)
   end
@@ -677,20 +691,23 @@ class SystemVisualizer
       end
       mermaid << "    end\n"
     else
-      mermaid << "    NoCircular[No circular dependencies found]\n"
-      mermaid << "    NoCircular style=\"fill:#ccffcc\"\n"
+      mermaid << "    NoCircular[No circular dependencies found]:::lowComplexity\n"
     end
     
     # Show high complexity areas
     high_complexity = find_high_complexity_areas
     mermaid << "    subgraph \"High Complexity Areas\"\n"
     high_complexity.each do |component, complexity_score|
-      mermaid << "      #{component}[#{component}<br/>Complexity: #{complexity_score}]\n"
-      mermaid << "      #{component} style=\"fill:#ffcccc\"\n"
+      mermaid << "      #{component}[#{component}<br/>Complexity: #{complexity_score}]:::highComplexity\n"
     end
     mermaid << "    end\n"
     
     mermaid << "  end\n"
+    
+    # Add class definitions for styling
+    mermaid << "\n  classDef highComplexity fill:#ffcccc,stroke:#ff6666,stroke-width:2px\n"
+    mermaid << "  classDef mediumComplexity fill:#ffffcc,stroke:#ffaa66,stroke-width:2px\n"
+    mermaid << "  classDef lowComplexity fill:#ccffcc,stroke:#66ff66,stroke-width:2px\n"
     
     File.write("#{output_path}/circular-dependency-analysis.md", mermaid)
   end
@@ -746,16 +763,15 @@ class SystemVisualizer
     mermaid << "    subgraph \"Changed Files\"\n"
     changed_files.each do |file|
       impact_level = calculate_file_impact(file)
-      color = case impact_level
-              when 'high'
-                "style=\"fill:#ff6666\""
-              when 'medium'
-                "style=\"fill:#ffaa66\""
-              else
-                "style=\"fill:#66ff66\""
-              end
-      mermaid << "      #{file.gsub(/[^a-zA-Z0-9]/, '_')}[#{File.basename(file)}<br/>#{impact_level} impact]\n"
-      mermaid << "      #{file.gsub(/[^a-zA-Z0-9]/, '_')} #{color}\n"
+      impact_class = case impact_level
+                     when 'high'
+                       "highImpact"
+                     when 'medium'
+                       "mediumImpact"
+                     else
+                       "lowImpact"
+                     end
+      mermaid << "      #{file.gsub(/[^a-zA-Z0-9]/, '_')}[#{File.basename(file)}<br/>#{impact_level} impact]:::#{impact_class}\n"
     end
     mermaid << "    end\n\n"
     
@@ -862,6 +878,14 @@ class SystemVisualizer
         end
       end
     end
+    
+    # Add class definitions for styling
+    mermaid << "\n  classDef highImpact fill:#ff6666,stroke:#cc0000,stroke-width:2px\n"
+    mermaid << "  classDef mediumImpact fill:#ffaa66,stroke:#cc6600,stroke-width:2px\n"
+    mermaid << "  classDef lowImpact fill:#66ff66,stroke:#00cc00,stroke-width:2px\n"
+    mermaid << "  classDef highComplexity fill:#ffcccc,stroke:#ff6666,stroke-width:2px\n"
+    mermaid << "  classDef mediumComplexity fill:#ffffcc,stroke:#ffaa66,stroke-width:2px\n"
+    mermaid << "  classDef lowComplexity fill:#ccffcc,stroke:#66ff66,stroke-width:2px\n"
     
     File.write("#{output_path}/pr-changes.md", mermaid)
   end
