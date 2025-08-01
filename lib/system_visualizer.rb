@@ -2077,69 +2077,106 @@ class SystemVisualizer
   end
 
   def generate_github_comment_format(changed_files)
-    content = String.new("## 🔍 Automated PR Analysis\n\n")
+    content = String.new("# 🔍 Enhanced PR Analysis Report\n\n")
     
-    content << "### 🟡 Risk Assessment\n"
-    content << "**AI Risk Score:** #{@pr_ai_risk_score[:score]}/100 (#{@pr_ai_risk_score[:level]})\n\n"
+    # Executive Summary Box
+    content << "> **📊 Executive Summary**\n"
+    content << "> \n"
+    content << "> - **Risk Level:** #{@pr_ai_risk_score[:level]} (#{@pr_ai_risk_score[:score]}/100)\n"
+    content << "> - **Total Commits:** #{(@commit_analyses || []).size}\n"
+    content << "> - **Files Changed:** #{(@changed_files || []).size}\n"
+    content << "> - **High Risk Commits:** #{(@commit_analyses || []).count { |c| c[:impact_score] > 50 }}\n\n"
     
     if @pr_ai_risk_score[:recommendations] && @pr_ai_risk_score[:recommendations].any?
-      content << "**Recommendations:**\n"
-      @pr_ai_risk_score[:recommendations].each { |rec| content << "- #{rec}\n" }
+      content << "## 💡 Key Recommendations\n\n"
+      @pr_ai_risk_score[:recommendations].each_with_index do |rec, idx| 
+        content << "#{idx + 1}. #{rec}\n" 
+      end
       content << "\n"
     end
 
     # Enhanced commit progression section
     if @commit_analyses && @commit_analyses.any?
-      content << "### 📈 Commit Progression Analysis\n\n"
+      content << "## 📈 Commit-by-Commit Analysis\n\n"
+      content << "*Click on any commit below to see detailed visual analysis*\n\n"
       
-      # Timeline diagram
-      content << "<details>\n<summary>🗓️ <strong>Timeline Overview</strong></summary>\n\n"
+      # Timeline diagram - more prominent
+      content << "### 🗓️ Timeline Overview\n\n"
       content << "```mermaid\n"
-      content << File.read("docs/system-diagrams/reports/pr_timeline.md") if File.exist?("docs/system-diagrams/reports/pr_timeline.md")
+      if File.exist?("docs/system-diagrams/reports/pr_timeline.md")
+        timeline_content = File.read("docs/system-diagrams/reports/pr_timeline.md")
+        content << timeline_content
+      end
       content << "\n```\n\n"
-      content << "</details>\n\n"
       
-      # Individual commit visuals
+      content << "---\n\n"
+      content << "### 🔍 Individual Commit Analysis\n\n"
+      
+      # Individual commit visuals with enhanced presentation
       @commit_analyses.each_with_index do |commit_analysis, index|
         commit_number = index + 1
         commit_sha_short = commit_analysis[:sha][0..7]
+        commit_type = categorize_commit(commit_analysis[:message])
+        commit_icon = get_commit_type_icon(commit_type)
+        
+        # Risk level indicator
+        risk_indicator = case commit_analysis[:impact_score]
+                        when 0..20 then '🟢'
+                        when 21..50 then '🟡'
+                        when 51..80 then '🟠'
+                        else '🔴'
+                        end
         
         content << "<details>\n"
-        content << "<summary>📝 <strong>Commit #{commit_number}: #{commit_sha_short}</strong> - #{commit_analysis[:message]}</summary>\n\n"
+        content << "<summary>#{risk_indicator} #{commit_icon} <strong>Commit #{commit_number}: #{commit_sha_short}</strong> - <code>#{commit_type}</code><br/>"
+        content << "<em>#{commit_analysis[:message]}</em></summary>\n\n"
         
-        # Commit summary info
-        content << "**Impact Score:** #{commit_analysis[:impact_score]}/100\n"
-        content << "**Files Changed:** #{commit_analysis[:changed_files].size}\n"
+        # Enhanced commit summary with visual metrics
+        content << "| Metric | Value | Status |\n"
+        content << "|--------|-------|--------|\n"
+        content << "| **Impact Score** | #{commit_analysis[:impact_score]}/100 | #{risk_indicator} |\n"
+        content << "| **Files Changed** | #{commit_analysis[:changed_files].size} | #{commit_analysis[:changed_files].size > 5 ? '⚠️' : '✅'} |\n"
+        content << "| **Commit Type** | #{commit_type.capitalize} | #{commit_icon} |\n"
         
         if commit_analysis[:risks].any?
-          content << "**Risk Categories:** #{commit_analysis[:risks].join(', ')}\n"
+          content << "| **Risk Categories** | #{commit_analysis[:risks].join(', ')} | #{commit_analysis[:risks].size > 2 ? '⚠️' : '✅'} |\n"
         end
         content << "\n"
         
-        # Embed the commit diagram directly
+        # Embed the enhanced commit diagram
         commit_diagram_file = "docs/system-diagrams/commits/commit_#{commit_number}_#{commit_sha_short}.md"
         if File.exist?(commit_diagram_file)
+          content << "**🎯 Visual Impact Analysis:**\n\n"
           content << "```mermaid\n"
           content << File.read(commit_diagram_file)
           content << "\n```\n\n"
         end
         
-        # Add risk details if any
+        # Enhanced risk breakdown
+        risks_found = []
         if commit_analysis[:security_risks] > 0
-          content << "🔒 **Security Issues:** #{commit_analysis[:security_risks]}\n"
+          risks_found << "🔒 **Security**: #{commit_analysis[:security_risks]} critical issues"
         end
         if commit_analysis[:performance_risks] > 0
-          content << "⚡ **Performance Issues:** #{commit_analysis[:performance_risks]}\n"
+          risks_found << "⚡ **Performance**: #{commit_analysis[:performance_risks]} bottlenecks"
         end
         if commit_analysis[:database_risks] > 0
-          content << "🗄️ **Database Issues:** #{commit_analysis[:database_risks]}\n"
+          risks_found << "🗄️ **Database**: #{commit_analysis[:database_risks]} schema changes"
         end
         if commit_analysis[:test_coverage_risks] > 0
-          content << "🧪 **Test Coverage Issues:** #{commit_analysis[:test_coverage_risks]}\n"
+          risks_found << "🧪 **Test Coverage**: #{commit_analysis[:test_coverage_risks]} missing tests"
         end
         
-        content << "\n</details>\n\n"
+        if risks_found.any?
+          content << "**⚠️ Risk Details:**\n"
+          risks_found.each { |risk| content << "- #{risk}\n" }
+          content << "\n"
+        end
+        
+        content << "</details>\n\n"
       end
+      
+      content << "---\n\n"
     end
 
     content << "### 📊 Change Statistics\n"
@@ -2235,10 +2272,14 @@ class SystemVisualizer
     sha_short = analysis[:sha][0..7]
     mermaid = String.new("")
     
-    mermaid << "graph TD\n"
-    mermaid << "  subgraph \"Commit #{commit_number}: #{sha_short}\"\n"
+    # Detect commit type from message
+    commit_type = categorize_commit(analysis[:message])
+    commit_icon = get_commit_type_icon(commit_type)
     
-    # Add commit info
+    mermaid << "graph TD\n"
+    mermaid << "  subgraph \"#{commit_icon} Commit #{commit_number}: #{sha_short} (#{commit_type})\"\n"
+    
+    # Enhanced commit info with type and metrics
     risk_class = case analysis[:impact_score]
                  when 0..20 then "lowRisk"
                  when 21..50 then "mediumRisk"
@@ -2246,49 +2287,72 @@ class SystemVisualizer
                  else "criticalRisk"
                  end
     
-    mermaid << "    CommitInfo[\"📝 #{sha_short}<br/>Impact: #{analysis[:impact_score]}/100<br/>Files: #{analysis[:changed_files].size}\"]:::#{risk_class}\n"
+    mermaid << "    CommitInfo[\"#{commit_icon} #{sha_short}<br/>#{commit_type.capitalize}<br/>Impact: #{analysis[:impact_score]}/100<br/>Files: #{analysis[:changed_files].size}\"]:::#{risk_class}\n"
     
-    # Add changed files
+    # Add changed files with enhanced categorization
     if analysis[:changed_files].any?
-      mermaid << "    subgraph \"Changed Files\"\n"
-      analysis[:changed_files].each do |file|
-        file_name = File.basename(file, '.rb')
-        file_class = case file
-                     when /models/ then "modelFile"
-                     when /controllers/ then "controllerFile"
-                     when /services/ then "serviceFile"
-                     when /workers/ then "workerFile"
-                     else "otherFile"
-                     end
-        mermaid << "      #{file_name.gsub(/[^a-zA-Z0-9]/, '_')}[#{file_name}]:::#{file_class}\n"
+      # Group files by type for better visualization
+      files_by_type = group_files_by_type(analysis[:changed_files])
+      
+      files_by_type.each do |type, files|
+        next if files.empty?
+        
+        type_icon = get_file_type_icon(type)
+        mermaid << "    subgraph \"#{type_icon} #{type.capitalize} Files\"\n"
+        
+        files.each do |file|
+          file_name = File.basename(file, '.rb')
+          safe_name = file_name.gsub(/[^a-zA-Z0-9]/, '_')
+          file_class = "#{type}File"
+          
+          # Enhanced file info with estimated complexity
+          complexity = estimate_file_complexity(file)
+          mermaid << "      #{safe_name}[\"#{file_name}<br/>~#{complexity} complexity\"]:::#{file_class}\n"
+          mermaid << "      CommitInfo --> #{safe_name}\n"
+        end
+        mermaid << "    end\n"
       end
-      mermaid << "    end\n"
+      
+      # Add file dependencies if detected
+      add_file_dependencies(mermaid, analysis[:changed_files])
     end
     
-    # Add risks if any
+    # Enhanced risk visualization with connections
+    risk_nodes = []
+    
     if analysis[:security_risks] > 0
-      mermaid << "    SecurityRisks[\"🔒 Security<br/>#{analysis[:security_risks]} issues\"]:::securityRisk\n"
+      risk_nodes << "SecurityRisks"
+      mermaid << "    SecurityRisks[\"🔒 Security Risks<br/>#{analysis[:security_risks]} critical issues<br/>Authentication, Authorization\"]:::securityRisk\n"
       mermaid << "    CommitInfo --> SecurityRisks\n"
     end
     
     if analysis[:performance_risks] > 0
-      mermaid << "    PerformanceRisks[\"⚡ Performance<br/>#{analysis[:performance_risks]} issues\"]:::performanceRisk\n"
+      risk_nodes << "PerformanceRisks"
+      mermaid << "    PerformanceRisks[\"⚡ Performance Risks<br/>#{analysis[:performance_risks]} bottlenecks<br/>Database queries, N+1\"]:::performanceRisk\n"
       mermaid << "    CommitInfo --> PerformanceRisks\n"
     end
     
     if analysis[:database_risks] > 0
-      mermaid << "    DatabaseRisks[\"🗄️ Database<br/>#{analysis[:database_risks]} issues\"]:::databaseRisk\n"
+      risk_nodes << "DatabaseRisks"
+      mermaid << "    DatabaseRisks[\"🗄️ Database Risks<br/>#{analysis[:database_risks]} schema changes<br/>Migrations, Constraints\"]:::databaseRisk\n"
       mermaid << "    CommitInfo --> DatabaseRisks\n"
     end
     
     if analysis[:test_coverage_risks] > 0
-      mermaid << "    Test_coverageRisks[\"🧪 Test Coverage<br/>#{analysis[:test_coverage_risks]} issues\"]:::test_coverageRisk\n"
-      mermaid << "    CommitInfo --> Test_coverageRisks\n"
+      risk_nodes << "TestCoverageRisks"
+      mermaid << "    TestCoverageRisks[\"🧪 Test Coverage<br/>#{analysis[:test_coverage_risks]} missing tests<br/>Unit, Integration\"]:::testCoverageRisk\n"
+      mermaid << "    CommitInfo --> TestCoverageRisks\n"
+    end
+    
+    # Add impact summary if high risk
+    if analysis[:impact_score] > 50
+      mermaid << "    ImpactSummary[\"⚠️ High Impact Change<br/>Review Required<br/>Consider staging deployment\"]:::highImpactWarning\n"
+      risk_nodes.each { |risk| mermaid << "    #{risk} --> ImpactSummary\n" }
     end
     
     mermaid << "  end\n\n"
     
-    # Add styling
+    # Enhanced styling with new classes
     mermaid << "  classDef lowRisk fill:#ccffcc,stroke:#00cc00,stroke-width:2px\n"
     mermaid << "  classDef mediumRisk fill:#ffffcc,stroke:#ffaa00,stroke-width:2px\n"
     mermaid << "  classDef highRisk fill:#ffcccc,stroke:#ff6600,stroke-width:2px\n"
@@ -2297,12 +2361,152 @@ class SystemVisualizer
     mermaid << "  classDef controllerFile fill:#f3e5f5,stroke:#7b1fa2,stroke-width:2px\n"
     mermaid << "  classDef serviceFile fill:#e8f5e8,stroke:#388e3c,stroke-width:2px\n"
     mermaid << "  classDef workerFile fill:#fff3e0,stroke:#f57c00,stroke-width:2px\n"
+    mermaid << "  classDef otherFile fill:#f5f5f5,stroke:#757575,stroke-width:2px\n"
     mermaid << "  classDef securityRisk fill:#ffebee,stroke:#d32f2f,stroke-width:2px\n"
     mermaid << "  classDef performanceRisk fill:#fff8e1,stroke:#ffa000,stroke-width:2px\n"
     mermaid << "  classDef databaseRisk fill:#e3f2fd,stroke:#1976d2,stroke-width:2px\n"
-    mermaid << "  classDef test_coverageRisk fill:#f1f8e9,stroke:#689f38,stroke-width:2px\n"
+    mermaid << "  classDef testCoverageRisk fill:#f1f8e9,stroke:#689f38,stroke-width:2px\n"
+    mermaid << "  classDef highImpactWarning fill:#ffcdd2,stroke:#d32f2f,stroke-width:3px\n"
     
     File.write("docs/system-diagrams/commits/commit_#{commit_number}_#{sha_short}.md", mermaid)
+  end
+
+  # Helper methods for enhanced commit visualization
+  
+  def categorize_commit(message)
+    message_lower = message.downcase
+    case message_lower
+    when /^feat/, /^feature/, /add.*feature/, /implement/, /create.*new/
+      'feature'
+    when /^fix/, /^bug/, /resolve.*bug/, /patch/, /hotfix/
+      'bugfix'  
+    when /^refactor/, /^refact/, /cleanup/, /reorganize/, /restructure/
+      'refactor'
+    when /^test/, /^spec/, /add.*test/, /testing/
+      'test'
+    when /^doc/, /^docs/, /documentation/, /readme/
+      'docs'
+    when /^style/, /^format/, /^lint/, /prettier/, /rubocop/
+      'style'
+    when /^perf/, /^performance/, /optimize/, /speed up/
+      'performance'
+    when /^chore/, /^maintenance/, /^update/, /^upgrade/, /^deps/
+      'chore'
+    when /^security/, /^sec/, /vulnerability/, /auth/, /permission/
+      'security'
+    when /^config/, /^env/, /^environment/, /^setting/
+      'config'
+    else
+      'other'
+    end
+  end
+  
+  def get_commit_type_icon(type)
+    case type
+    when 'feature' then '✨'
+    when 'bugfix' then '🐛'
+    when 'refactor' then '♻️'
+    when 'test' then '🧪'
+    when 'docs' then '📝'
+    when 'style' then '💄'
+    when 'performance' then '⚡'
+    when 'chore' then '🔧'
+    when 'security' then '🔒'
+    when 'config' then '⚙️'
+    else '📦'
+    end
+  end
+  
+  def group_files_by_type(files)
+    grouped = {
+      'model' => [],
+      'controller' => [],
+      'service' => [],
+      'worker' => [],
+      'other' => []
+    }
+    
+    files.each do |file|
+      case file
+      when /models/
+        grouped['model'] << file
+      when /controllers/
+        grouped['controller'] << file
+      when /services/
+        grouped['service'] << file
+      when /workers/
+        grouped['worker'] << file
+      else
+        grouped['other'] << file
+      end
+    end
+    
+    grouped
+  end
+  
+  def get_file_type_icon(type)
+    case type
+    when 'model' then '🗂️'
+    when 'controller' then '🎮'
+    when 'service' then '⚙️'
+    when 'worker' then '👷'
+    else '📄'
+    end
+  end
+  
+  def estimate_file_complexity(file_path)
+    return 'Unknown' unless File.exist?(file_path)
+    
+    begin
+      content = File.read(file_path)
+      lines = content.lines.count
+      methods = content.scan(/def /).length
+      classes = content.scan(/class /).length
+      
+      # Simple complexity estimation
+      complexity_score = lines / 10 + methods * 2 + classes * 5
+      
+      case complexity_score
+      when 0..10 then 'Low'
+      when 11..25 then 'Medium'
+      when 26..50 then 'High'
+      else 'Very High'
+      end
+    rescue
+      'Unknown'
+    end
+  end
+  
+  def add_file_dependencies(mermaid, files)
+    # Detect potential dependencies between files
+    dependencies = []
+    
+    files.each do |file1|
+      next unless File.exist?(file1)
+      
+      begin
+        content1 = File.read(file1)
+        files.each do |file2|
+          next if file1 == file2
+          next unless File.exist?(file2)
+          
+          file2_name = File.basename(file2, '.rb')
+          class_name = file2_name.split('_').map(&:capitalize).join
+          
+          # Check if file1 references file2
+          if content1.match?(/#{class_name}|#{file2_name}/)
+            safe_name1 = File.basename(file1, '.rb').gsub(/[^a-zA-Z0-9]/, '_')
+            safe_name2 = File.basename(file2, '.rb').gsub(/[^a-zA-Z0-9]/, '_')
+            dependencies << "    #{safe_name1} --> #{safe_name2}\n"
+          end
+        end
+      rescue
+        # Skip file if unable to read
+      end
+    end
+    
+    # Add dependency connections
+    dependencies.uniq.each { |dep| mermaid << dep }
   end
 
   def generate_commit_summary(analysis, commit_number)
