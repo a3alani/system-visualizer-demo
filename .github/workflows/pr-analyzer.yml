@@ -37,24 +37,64 @@ jobs:
         ./bin/system_visualizer analyze || echo "Full analysis failed, continuing with PR analysis..."
       continue-on-error: true
     
-    - name: Execute System Visualizer - PR Analysis
+    - name: Execute Enhanced System Visualizer - PR Analysis
       id: pr_analysis
       run: |
-        echo "🔍 Running PR impact analysis..."
-        ./bin/system_visualizer pr ${{ github.event.pull_request.base.ref }}
+        echo "🔍 Running enhanced PR impact analysis with per-commit breakdown..."
+        TARGET_BRANCH="${{ github.event.pull_request.base.ref || 'main' }}"
+        echo "Analyzing changes against branch: $TARGET_BRANCH"
+        
+        # Run enhanced analysis that generates per-commit visuals
+        ruby -e "
+          require './lib/system_visualizer'
+          sv = SystemVisualizer.new
+          sv.analyze_pr_changes('$TARGET_BRANCH')
+        "
+        
         echo "analysis_completed=true" >> $GITHUB_OUTPUT
+        
+        # Verify enhanced comment was generated
+        if [ -f "docs/system-diagrams/reports/github_comment_simple.md" ]; then
+          echo "✅ Simple GitHub comment with individual commit sections generated"
+          echo "📊 Simple comment size: $(wc -l < docs/system-diagrams/reports/github_comment_simple.md) lines"
+        elif [ -f "docs/system-diagrams/reports/github_comment.md" ]; then
+          echo "✅ Enhanced GitHub comment with collapsible sections generated"
+          echo "📊 Enhanced comment size: $(wc -l < docs/system-diagrams/reports/github_comment.md) lines"
+        else
+          echo "⚠️ No enhanced comment files found, will use fallback format"
+        fi
       continue-on-error: true
     
-    - name: List generated diagrams
+    - name: List generated diagrams and commit analysis
       run: |
         echo "📊 Generated diagram files:"
         ls -la docs/system-diagrams/ || echo "No diagrams directory found"
+        
         if [ -d "docs/system-diagrams" ]; then
+          echo "📄 Main diagram files:"
           for file in docs/system-diagrams/*.md; do
             if [ -f "$file" ]; then
-              echo "📄 Found: $(basename "$file") ($(wc -l < "$file") lines)"
+              echo "  - $(basename "$file") ($(wc -l < "$file") lines)"
             fi
           done
+          
+          echo "📈 Enhanced reports:"
+          if [ -d "docs/system-diagrams/reports" ]; then
+            for file in docs/system-diagrams/reports/*.md; do
+              if [ -f "$file" ]; then
+                echo "  - reports/$(basename "$file") ($(wc -l < "$file") lines)"
+              fi
+            done
+          fi
+          
+          echo "📝 Individual commit analysis:"
+          if [ -d "docs/system-diagrams/commits" ]; then
+            for file in docs/system-diagrams/commits/*.md; do
+              if [ -f "$file" ]; then
+                echo "  - commits/$(basename "$file") ($(wc -l < "$file") lines)"
+              fi
+            done
+          fi
         fi
     
     - name: Upload diagrams as artifacts
@@ -73,56 +113,82 @@ jobs:
           const fs = require('fs');
           const path = require('path');
           
-          let comment = '## 🔍 System Visualizer Analysis\n\n';
-          comment += '_Automated analysis of your PR changes and their impact on the codebase architecture._\n\n';
+          // First, try to use the simple GitHub comment format (better for GitHub rendering)
+          const simpleCommentPath = 'docs/system-diagrams/reports/github_comment_simple.md';
+          const enhancedCommentPath = 'docs/system-diagrams/reports/github_comment.md';
+          let comment = '';
           
-          const diagramsDir = 'docs/system-diagrams';
-          const diagramFiles = [
-            { file: 'pr-changes.md', title: '📋 PR Impact Analysis', description: 'Shows the specific impact of changes in this PR' },
-            { file: 'overview.md', title: '🏗️ Architecture Overview', description: 'High-level view of the application architecture' },
-            { file: 'dependency-analysis.md', title: '🔗 Dependency Analysis', description: 'Analysis of component dependencies and complexity' },
-            { file: 'circular-dependency-analysis.md', title: '🔄 Circular Dependencies', description: 'Detection of circular dependencies and complexity hotspots' }
-          ];
-          
-          let hasAnyDiagram = false;
-          
-          for (const { file, title, description } of diagramFiles) {
-            const filePath = path.join(diagramsDir, file);
-            if (fs.existsSync(filePath)) {
-              try {
-                const diagram = fs.readFileSync(filePath, 'utf8').trim();
-                if (diagram.length > 0) {
-                  hasAnyDiagram = true;
-                  comment += `### ${title}\n`;
-                  comment += `_${description}_\n\n`;
-                  comment += '```mermaid\n';
-                  comment += diagram;
-                  comment += '\n```\n\n';
-                  comment += '---\n\n';
-                }
-              } catch (error) {
-                console.log(`Error reading ${file}:`, error.message);
+          if (fs.existsSync(simpleCommentPath)) {
+            try {
+              // Use our simple GitHub comment with individual commit sections
+              comment = fs.readFileSync(simpleCommentPath, 'utf8');
+              console.log('Using simple GitHub comment format with individual commit sections');
+            } catch (error) {
+              console.log('Error reading simple comment format:', error.message);
+              // Fallback to enhanced format
+              if (fs.existsSync(enhancedCommentPath)) {
+                comment = fs.readFileSync(enhancedCommentPath, 'utf8');
+                console.log('Fallback to enhanced GitHub comment format');
+              } else {
+                comment = '## 🔍 System Visualizer Analysis\n\n_Analysis generated but failed to load comment format._\n\n';
               }
             }
+          } else if (fs.existsSync(enhancedCommentPath)) {
+            try {
+              // Use enhanced format as fallback
+              comment = fs.readFileSync(enhancedCommentPath, 'utf8');
+              console.log('Using enhanced GitHub comment format (simple format not available)');
+            } catch (error) {
+              console.log('Error reading enhanced comment format:', error.message);
+              comment = '## 🔍 System Visualizer Analysis\n\n_Analysis generated but failed to load enhanced format._\n\n';
+            }
+          } else {
+            // Fallback to legacy format if enhanced comment doesn't exist
+            comment = '## 🔍 System Visualizer Analysis\n\n';
+            comment += '_Automated analysis of your PR changes and their impact on the codebase architecture._\n\n';
+            
+            const diagramsDir = 'docs/system-diagrams';
+            const diagramFiles = [
+              { file: 'pr-changes.md', title: '📋 PR Impact Analysis', description: 'Shows the specific impact of changes in this PR' },
+              { file: 'overview.md', title: '🏗️ Architecture Overview', description: 'High-level view of the application architecture' },
+              { file: 'dependency-analysis.md', title: '🔗 Dependency Analysis', description: 'Analysis of component dependencies and complexity' },
+              { file: 'circular-dependency-analysis.md', title: '🔄 Circular Dependencies', description: 'Detection of circular dependencies and complexity hotspots' }
+            ];
+            
+            let hasAnyDiagram = false;
+            
+            for (const { file, title, description } of diagramFiles) {
+              const filePath = path.join(diagramsDir, file);
+              if (fs.existsSync(filePath)) {
+                try {
+                  const diagram = fs.readFileSync(filePath, 'utf8').trim();
+                  if (diagram.length > 0) {
+                    hasAnyDiagram = true;
+                    comment += `### ${title}\n`;
+                    comment += `_${description}_\n\n`;
+                    comment += '```mermaid\n';
+                    comment += diagram;
+                    comment += '\n```\n\n';
+                    comment += '---\n\n';
+                  }
+                } catch (error) {
+                  console.log(`Error reading ${file}:`, error.message);
+                }
+              }
+            }
+            
+            if (!hasAnyDiagram) {
+              comment += '⚠️ No diagrams were generated. This might indicate:\n';
+              comment += '- No significant changes detected in models, controllers, or services\n';
+              comment += '- Analysis focused on non-architectural files\n';
+              comment += '- Technical issue during diagram generation\n\n';
+              comment += '📁 Check the workflow artifacts for any generated files.\n\n';
+            }
+            
+            comment += '---\n';
+            comment += `🤖 _Analysis completed at ${new Date().toISOString()}_\n`;
+            comment += '📊 _Generated by [System Visualizer](https://github.com/a3alani/system-visualizer-demo)_';
           }
-          
-          if (!hasAnyDiagram) {
-            comment += '### ℹ️ No Significant Changes Detected\n\n';
-            comment += 'This PR doesn\'t appear to modify core application files (models, controllers, services, workers) that would impact the architecture diagram.\n\n';
-          }
-          
-          comment += '### 📊 Additional Information\n\n';
-          comment += '- **Full analysis artifacts** are available in the workflow run\n';
-          comment += '- **Interactive diagrams** can be viewed by copying the Mermaid code to [mermaid.live](https://mermaid.live/)\n';
-          comment += '- **Analysis covers**: Models, Controllers, Services, Workers, and their dependencies\n\n';
-          comment += '<details>\n<summary>🔧 How to interpret these diagrams</summary>\n\n';
-          comment += '- **🔴 Red components**: High complexity or high impact\n';
-          comment += '- **🟡 Yellow components**: Medium complexity or medium impact\n';
-          comment += '- **🟢 Green components**: Low complexity or low impact\n';
-          comment += '- **Solid arrows**: Direct dependencies\n';
-          comment += '- **Dashed arrows**: Indirect or service dependencies\n';
-          comment += '</details>\n\n';
-          comment += '_Generated by System Visualizer v1.0 🤖_';
           
           // Check if there's already a comment from the bot
           const { data: comments } = await github.rest.issues.listComments({

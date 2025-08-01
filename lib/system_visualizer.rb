@@ -2001,8 +2001,9 @@ class SystemVisualizer
     # Generate HTML report
     generate_html_report(changed_files, json_data)
     
-    # Generate GitHub comment format
+    # Generate both GitHub comment formats for maximum compatibility
     generate_github_comment_format(changed_files)
+    generate_github_comment_simple_format(changed_files)
   end
 
   def generate_html_report(changed_files, data)
@@ -2747,5 +2748,120 @@ class SystemVisualizer
 
   def humanize_string(str)
     str.to_s.gsub('_', ' ').split.map(&:capitalize).join(' ')
+  end
+
+  # Generate an alternative GitHub comment format with individual commit sections
+  def generate_github_comment_simple_format(changed_files)
+    content = String.new("# 🔍 Enhanced PR Analysis - Commit-by-Commit Breakdown\n\n")
+    
+    # Executive Summary
+    content << "> **📊 Executive Summary**\n"
+    content << "> \n"
+    content << "> - **Risk Level:** #{@pr_ai_risk_score[:level]} (#{@pr_ai_risk_score[:score]}/100)\n"
+    content << "> - **Total Commits:** #{(@commit_analyses || []).size}\n"
+    content << "> - **Files Changed:** #{(@changed_files || []).size}\n"
+    content << "> - **High Risk Commits:** #{(@commit_analyses || []).count { |c| c[:impact_score] > 50 }}\n\n"
+    
+    if @pr_ai_risk_score[:recommendations] && @pr_ai_risk_score[:recommendations].any?
+      content << "## 💡 Key Recommendations\n\n"
+      @pr_ai_risk_score[:recommendations].each_with_index do |rec, idx| 
+        content << "#{idx + 1}. #{rec}\n" 
+      end
+      content << "\n"
+    end
+
+    # Timeline Overview (simplified)
+    if @commit_analyses && @commit_analyses.any?
+      content << "## 📈 Commit Timeline\n\n"
+      content << "```mermaid\n"
+      if File.exist?("docs/system-diagrams/reports/pr_timeline.md")
+        timeline_content = File.read("docs/system-diagrams/reports/pr_timeline.md")
+        content << timeline_content
+      end
+      content << "\n```\n\n"
+      
+      content << "---\n\n"
+      
+      # Individual commit sections (not collapsible)
+      @commit_analyses.each_with_index do |commit_analysis, index|
+        commit_number = index + 1
+        commit_sha_short = commit_analysis[:sha][0..7]
+        commit_type = categorize_commit(commit_analysis[:message])
+        commit_icon = get_commit_type_icon(commit_type)
+        
+        # Risk level indicator
+        risk_indicator = case commit_analysis[:impact_score]
+                        when 0..20 then '🟢'
+                        when 21..50 then '🟡'
+                        when 51..80 then '🟠'
+                        else '🔴'
+                        end
+        
+        content << "## #{risk_indicator} #{commit_icon} Commit #{commit_number}: #{commit_sha_short} - #{commit_type.capitalize}\n\n"
+        content << "**Message:** #{commit_analysis[:message]}\n\n"
+        
+        # Metrics table
+        content << "| Metric | Value | Status |\n"
+        content << "|--------|-------|---------|\n"
+        content << "| **Impact Score** | #{commit_analysis[:impact_score]}/100 | #{risk_indicator} |\n"
+        content << "| **Files Changed** | #{commit_analysis[:changed_files].size} | #{commit_analysis[:changed_files].size > 5 ? '⚠️' : '✅'} |\n"
+        content << "| **Commit Type** | #{commit_type.capitalize} | #{commit_icon} |\n"
+        
+        if commit_analysis[:risks].any?
+          content << "| **Risk Categories** | #{commit_analysis[:risks].join(', ')} | #{commit_analysis[:risks].size > 2 ? '⚠️' : '✅'} |\n"
+        end
+        content << "\n"
+        
+        # Embed the commit diagram directly (no collapsible)
+        commit_diagram_file = "docs/system-diagrams/commits/commit_#{commit_number}_#{commit_sha_short}.md"
+        if File.exist?(commit_diagram_file)
+          content << "**🎯 Visual Impact Analysis:**\n\n"
+          content << "```mermaid\n"
+          content << File.read(commit_diagram_file)
+          content << "\n```\n\n"
+        end
+        
+        # Risk breakdown
+        risks_found = []
+        if commit_analysis[:security_risks] > 0
+          risks_found << "🔒 **Security**: #{commit_analysis[:security_risks]} critical issues"
+        end
+        if commit_analysis[:performance_risks] > 0
+          risks_found << "⚡ **Performance**: #{commit_analysis[:performance_risks]} bottlenecks"
+        end
+        if commit_analysis[:database_risks] > 0
+          risks_found << "🗄️ **Database**: #{commit_analysis[:database_risks]} schema changes"
+        end
+        if commit_analysis[:test_coverage_risks] > 0
+          risks_found << "🧪 **Test Coverage**: #{commit_analysis[:test_coverage_risks]} missing tests"
+        end
+        
+        if risks_found.any?
+          content << "**⚠️ Risk Details:**\n"
+          risks_found.each { |risk| content << "- #{risk}\n" }
+          content << "\n"
+        end
+        
+        content << "---\n\n"
+      end
+    end
+    
+    # Footer
+    content << "### 📊 Overall Change Statistics\n"
+    content << "- **Files Changed:** #{(@changed_files || []).size}\n"
+    content << "- **Models:** #{(@changed_files || []).count { |f| f.include?('models/') }}\n"
+    content << "- **Controllers:** #{(@changed_files || []).count { |f| f.include?('controllers/') }}\n"
+    content << "- **Services:** #{(@changed_files || []).count { |f| f.include?('services/') }}\n\n"
+
+    content << "### ⚠️ Issues Found\n"
+    content << "- **Performance Risks:** #{(@pr_performance_risks || {}).size}\n"
+    content << "- **Security Risks:** #{(@pr_security_risks || {}).size}\n"
+    content << "- **Database Impacts:** #{(@pr_database_impacts || {}).size}\n\n"
+    
+    content << "---\n"
+    content << "_Generated by Enhanced System Visualizer with per-commit analysis at #{Time.now.strftime("%Y-%m-%d %H:%M:%S")}_"
+    
+    File.write("docs/system-diagrams/reports/github_comment_simple.md", content)
+    puts "✅ Simple GitHub comment format generated with individual commit sections!"
   end
 end 
