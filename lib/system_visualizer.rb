@@ -3,6 +3,8 @@
 require 'fileutils'
 require 'json'
 require 'set'
+require 'net/http'
+require 'uri'
 
 class SystemVisualizer
   attr_reader :app_path, :output_path
@@ -15,6 +17,14 @@ class SystemVisualizer
     @controllers = {}
     @services = {}
     @workers = {}
+    
+    # Enhanced analysis data structures
+    @performance_risks = {}
+    @security_risks = {}
+    @database_impacts = {}
+    @api_changes = {}
+    @complexity_scores = {}
+    @test_coverage = {}
   end
 
   def analyze
@@ -25,7 +35,11 @@ class SystemVisualizer
     analyze_services
     analyze_workers
     
+    # Enhanced analysis
+    perform_enhanced_analysis
+    
     generate_diagrams
+    generate_enhanced_reports
     puts "✅ Analysis complete! Diagrams saved to #{output_path}"
   end
 
@@ -49,7 +63,11 @@ class SystemVisualizer
       end
     end
     
+    # Enhanced PR analysis
+    perform_pr_enhanced_analysis(changed_files, base_branch)
+    
     generate_pr_diagram(changed_files)
+    generate_enhanced_pr_report(changed_files)
     puts "✅ PR analysis complete!"
   end
 
@@ -404,16 +422,15 @@ class SystemVisualizer
         dependency_count = data[:dependencies].size
         
         # Color code based on complexity
-        color = if dependency_count > 10
-                  "style=\"fill:#ffcccc\""
-                elsif dependency_count > 5
-                  "style=\"fill:#ffffcc\""
-                else
-                  "style=\"fill:#ccffcc\""
-                end
+        complexity_class = if dependency_count > 10
+                             "highComplexity"
+                           elsif dependency_count > 5
+                             "mediumComplexity"
+                           else
+                             "lowComplexity"
+                           end
         
-        mermaid << "    #{model_name}[#{model_name}<br/>#{association_count} assoc, #{dependency_count} deps]\n"
-        mermaid << "    #{model_name} #{color}\n"
+        mermaid << "    #{model_name}[#{model_name}<br/>#{association_count} assoc, #{dependency_count} deps]:::#{complexity_class}\n"
       end
       mermaid << "  end\n\n"
     end
@@ -437,6 +454,11 @@ class SystemVisualizer
         end
       end
     end
+    
+    # Add class definitions for styling
+    mermaid << "\n  classDef highComplexity fill:#ffcccc,stroke:#ff6666,stroke-width:2px\n"
+    mermaid << "  classDef mediumComplexity fill:#ffffcc,stroke:#ffaa66,stroke-width:2px\n"
+    mermaid << "  classDef lowComplexity fill:#ccffcc,stroke:#66ff66,stroke-width:2px\n"
     
     File.write("#{output_path}/models.md", mermaid)
   end
@@ -534,15 +556,14 @@ class SystemVisualizer
     
     mermaid << "    subgraph \"Most Referenced Models\"\n"
     top_dependent_models.each do |model_name, count|
-      color = if count > 20
-                "style=\"fill:#ff6666\""
-              elsif count > 10
-                "style=\"fill:#ffaa66\""
-              else
-                "style=\"fill:#66ff66\""
-              end
-              mermaid << "      #{model_name}[#{model_name}<br/>#{count} references]\n"
-        mermaid << "      #{model_name} #{color}\n"
+      impact_class = if count > 20
+                       "highImpact"
+                     elsif count > 10
+                       "mediumImpact"
+                     else
+                       "lowImpact"
+                     end
+      mermaid << "      #{model_name}[#{model_name}<br/>#{count} references]:::#{impact_class}\n"
     end
     mermaid << "    end\n"
     
@@ -550,15 +571,14 @@ class SystemVisualizer
     most_dependent = @models.sort_by { |_, data| data[:dependencies].size }.reverse.first(10)
     mermaid << "    subgraph \"Models with Most Dependencies\"\n"
     most_dependent.each do |model_name, data|
-      color = if data[:dependencies].size > 15
-                "style=\"fill:#ff6666\""
-              elsif data[:dependencies].size > 8
-                "style=\"fill:#ffaa66\""
-              else
-                "style=\"fill:#66ff66\""
-              end
-              mermaid << "      #{model_name}[#{model_name}<br/>#{data[:dependencies].size} deps]\n"
-        mermaid << "      #{model_name} #{color}\n"
+      complexity_class = if data[:dependencies].size > 15
+                           "highComplexity"
+                         elsif data[:dependencies].size > 8
+                           "mediumComplexity"
+                         else
+                           "lowComplexity"
+                         end
+      mermaid << "      #{model_name}[#{model_name}<br/>#{data[:dependencies].size} deps]:::#{complexity_class}\n"
     end
     mermaid << "    end\n"
     
@@ -573,6 +593,14 @@ class SystemVisualizer
         end
       end
     end
+    
+    # Add class definitions for styling
+    mermaid << "\n  classDef highImpact fill:#ff6666,stroke:#cc0000,stroke-width:2px\n"
+    mermaid << "  classDef mediumImpact fill:#ffaa66,stroke:#cc6600,stroke-width:2px\n"
+    mermaid << "  classDef lowImpact fill:#66ff66,stroke:#00cc00,stroke-width:2px\n"
+    mermaid << "  classDef highComplexity fill:#ffcccc,stroke:#ff6666,stroke-width:2px\n"
+    mermaid << "  classDef mediumComplexity fill:#ffffcc,stroke:#ffaa66,stroke-width:2px\n"
+    mermaid << "  classDef lowComplexity fill:#ccffcc,stroke:#66ff66,stroke-width:2px\n"
     
     File.write("#{output_path}/dependency-analysis.md", mermaid)
   end
@@ -591,16 +619,15 @@ class SystemVisualizer
         data = @services[service_name]
         dependency_count = data[:dependencies].size
         
-        color = if dependency_count > 8
-                  "style=\"fill:#ffcccc\""
-                elsif dependency_count > 4
-                  "style=\"fill:#ffffcc\""
-                else
-                  "style=\"fill:#ccffcc\""
-                end
+        complexity_class = if dependency_count > 8
+                             "highComplexity"
+                           elsif dependency_count > 4
+                             "mediumComplexity"
+                           else
+                             "lowComplexity"
+                           end
         
-        mermaid << "      #{service_name}[#{service_name}<br/>#{dependency_count} deps]\n"
-        mermaid << "      #{service_name} #{color}\n"
+        mermaid << "      #{service_name}[#{service_name}<br/>#{dependency_count} deps]:::#{complexity_class}\n"
       end
       mermaid << "    end\n"
     end
@@ -619,6 +646,11 @@ class SystemVisualizer
         end
       end
     end
+    
+    # Add class definitions for styling
+    mermaid << "\n  classDef highComplexity fill:#ffcccc,stroke:#ff6666,stroke-width:2px\n"
+    mermaid << "  classDef mediumComplexity fill:#ffffcc,stroke:#ffaa66,stroke-width:2px\n"
+    mermaid << "  classDef lowComplexity fill:#ccffcc,stroke:#66ff66,stroke-width:2px\n"
     
     File.write("#{output_path}/service-dependency-map.md", mermaid)
   end
@@ -677,20 +709,23 @@ class SystemVisualizer
       end
       mermaid << "    end\n"
     else
-      mermaid << "    NoCircular[No circular dependencies found]\n"
-      mermaid << "    NoCircular style=\"fill:#ccffcc\"\n"
+      mermaid << "    NoCircular[No circular dependencies found]:::lowComplexity\n"
     end
     
     # Show high complexity areas
     high_complexity = find_high_complexity_areas
     mermaid << "    subgraph \"High Complexity Areas\"\n"
     high_complexity.each do |component, complexity_score|
-      mermaid << "      #{component}[#{component}<br/>Complexity: #{complexity_score}]\n"
-      mermaid << "      #{component} style=\"fill:#ffcccc\"\n"
+      mermaid << "      #{component}[#{component}<br/>Complexity: #{complexity_score}]:::highComplexity\n"
     end
     mermaid << "    end\n"
     
     mermaid << "  end\n"
+    
+    # Add class definitions for styling
+    mermaid << "\n  classDef highComplexity fill:#ffcccc,stroke:#ff6666,stroke-width:2px\n"
+    mermaid << "  classDef mediumComplexity fill:#ffffcc,stroke:#ffaa66,stroke-width:2px\n"
+    mermaid << "  classDef lowComplexity fill:#ccffcc,stroke:#66ff66,stroke-width:2px\n"
     
     File.write("#{output_path}/circular-dependency-analysis.md", mermaid)
   end
@@ -746,16 +781,15 @@ class SystemVisualizer
     mermaid << "    subgraph \"Changed Files\"\n"
     changed_files.each do |file|
       impact_level = calculate_file_impact(file)
-      color = case impact_level
-              when 'high'
-                "style=\"fill:#ff6666\""
-              when 'medium'
-                "style=\"fill:#ffaa66\""
-              else
-                "style=\"fill:#66ff66\""
-              end
-      mermaid << "      #{file.gsub(/[^a-zA-Z0-9]/, '_')}[#{File.basename(file)}<br/>#{impact_level} impact]\n"
-      mermaid << "      #{file.gsub(/[^a-zA-Z0-9]/, '_')} #{color}\n"
+      impact_class = case impact_level
+                     when 'high'
+                       "highImpact"
+                     when 'medium'
+                       "mediumImpact"
+                     else
+                       "lowImpact"
+                     end
+      mermaid << "      #{file.gsub(/[^a-zA-Z0-9]/, '_')}[#{File.basename(file)}<br/>#{impact_level} impact]:::#{impact_class}\n"
     end
     mermaid << "    end\n\n"
     
@@ -863,6 +897,14 @@ class SystemVisualizer
       end
     end
     
+    # Add class definitions for styling
+    mermaid << "\n  classDef highImpact fill:#ff6666,stroke:#cc0000,stroke-width:2px\n"
+    mermaid << "  classDef mediumImpact fill:#ffaa66,stroke:#cc6600,stroke-width:2px\n"
+    mermaid << "  classDef lowImpact fill:#66ff66,stroke:#00cc00,stroke-width:2px\n"
+    mermaid << "  classDef highComplexity fill:#ffcccc,stroke:#ff6666,stroke-width:2px\n"
+    mermaid << "  classDef mediumComplexity fill:#ffffcc,stroke:#ffaa66,stroke-width:2px\n"
+    mermaid << "  classDef lowComplexity fill:#ccffcc,stroke:#66ff66,stroke-width:2px\n"
+    
     File.write("#{output_path}/pr-changes.md", mermaid)
   end
 
@@ -879,5 +921,1040 @@ class SystemVisualizer
     else
       'low'
     end
+  end
+
+  def perform_enhanced_analysis
+    # Performance Risk Detection
+    @performance_risks = detect_performance_risks
+    # Security Risk Detection
+    @security_risks = detect_security_risks
+    # Database Impact Detection
+    @database_impacts = detect_database_impacts
+    # API Changes Detection
+    @api_changes = detect_api_changes
+    # Complexity Score Calculation
+    @complexity_scores = calculate_complexity_scores
+    # Test Coverage Analysis
+    @test_coverage = analyze_test_coverage
+  end
+
+  def detect_performance_risks
+    risks = {}
+    
+    # Analyze models for potential N+1 queries
+    risks['N+1 Query Risks'] = {}
+    @models.each do |model_name, data|
+      content = File.read(data[:file]) if File.exist?(data[:file])
+      if content&.match?(/has_many.*:(\w+).*\n.*\1\./)
+        risks['N+1 Query Risks'][model_name] = "Potential N+1 query in associations"
+      end
+    end
+    
+    # Analyze controllers for heavy operations
+    risks['Heavy Operations'] = {}
+    @controllers.each do |controller_name, data|
+      content = File.read(data[:file]) if File.exist?(data[:file])
+      if content&.match?(/(\.each|\.map|\.select|\.find_each).*\n.*\.(save|update|create|destroy)/)
+        risks['Heavy Operations'][controller_name] = "Bulk operations in controller"
+      end
+    end
+    
+    # Check for large result sets
+    risks['Large Result Sets'] = {}
+    all_files = [@models, @controllers, @services, @workers].flat_map { |h| h.values }
+    all_files.each do |data|
+      next unless data[:file] && File.exist?(data[:file])
+      content = File.read(data[:file])
+      if content.match?(/(\.all\b|\.where\(.*\)$)/) && !content.match?(/limit\(|\.first\(|\.last\(/)
+        component_name = File.basename(data[:file], '.rb')
+        risks['Large Result Sets'][component_name] = "Queries without pagination/limits"
+      end
+    end
+    
+    risks.reject { |_, v| v.empty? }
+  end
+
+  def detect_security_risks
+    risks = {}
+    
+    # Check for SQL injection vulnerabilities  
+    risks['SQL Injection'] = {}
+    all_files = [@models, @controllers, @services, @workers].flat_map { |h| h.values }
+    all_files.each do |data|
+      next unless data[:file] && File.exist?(data[:file])
+      content = File.read(data[:file])
+      if content.match?(/\.where\(.*["'].*#\{.*\}.*["'].*\)/)
+        component_name = File.basename(data[:file], '.rb')
+        risks['SQL Injection'][component_name] = "String interpolation in SQL queries"
+      end
+    end
+    
+    # Check for missing authentication
+    risks['Authentication Issues'] = {}
+    @controllers.each do |controller_name, data|
+      content = File.read(data[:file]) if File.exist?(data[:file])
+      auth_pattern = /(before_action.*authenticate|protect_from_forgery|skip_before_action.*verify_authenticity_token)/
+      if content && !content.match?(auth_pattern)
+        risks['Authentication Issues'][controller_name] = "No authentication checks found"
+      end
+    end
+    
+    # Check for mass assignment vulnerabilities
+    risks['Mass Assignment'] = {}
+    @controllers.each do |controller_name, data|
+      content = File.read(data[:file]) if File.exist?(data[:file])
+      if content&.match?(/params\[:(\w+)\]\.permit!/)
+        risks['Mass Assignment'][controller_name] = "Mass assignment with permit!"
+      end
+    end
+    
+    risks.reject { |_, v| v.empty? }
+  end
+
+  def detect_database_impacts
+    impacts = {}
+    
+    # Check for missing indexes on foreign keys
+    impacts['Missing Indexes'] = {}
+    @models.each do |model_name, data|
+      content = File.read(data[:file]) if File.exist?(data[:file])
+      foreign_keys = content&.scan(/belongs_to\s+:(\w+)/)&.flatten || []
+      foreign_keys.each do |fk|
+        impacts['Missing Indexes']["#{model_name}_#{fk}_id"] = "Consider adding index on #{fk}_id"
+      end
+    end
+    
+    # Check for expensive operations
+    impacts['Expensive Operations'] = {}
+    all_files = [@models, @controllers, @services, @workers].flat_map { |h| h.values }
+    all_files.each do |data|
+      next unless data[:file] && File.exist?(data[:file])
+      content = File.read(data[:file])
+      if content.match?(/(LIKE '%.*%'|\.size\b|\.count\b.*\.where|\.sum\(|\.average\()/)
+        component_name = File.basename(data[:file], '.rb')
+        impacts['Expensive Operations'][component_name] = "Contains potentially expensive DB operations"
+      end
+    end
+    
+    # Check for schema changes
+    impacts['Schema Changes'] = {}
+    @models.each do |model_name, data|
+      content = File.read(data[:file]) if File.exist?(data[:file])
+      if content&.match?(/(add_column|remove_column|change_column|add_index|remove_index)/)
+        impacts['Schema Changes'][model_name] = "Contains migration operations"
+      end
+    end
+    
+    impacts.reject { |_, v| v.empty? }
+  end
+
+  def detect_api_changes
+    changes = {}
+    
+    # Check for new routes/endpoints
+    changes['Route Changes'] = {}
+    @controllers.each do |controller_name, data|
+      content = File.read(data[:file]) if File.exist?(data[:file])
+      if content
+        new_actions = content.scan(/def\s+(\w+)/).flatten - %w[initialize private protected]
+        if new_actions.any?
+          changes['Route Changes'][controller_name] = "#{new_actions.size} actions: #{new_actions.join(', ')}"
+        end
+      end
+    end
+    
+    # Check for API version changes
+    changes['API Version Changes'] = {}
+    if File.exist?('config/routes.rb')
+      routes_content = File.read('config/routes.rb')
+      api_versions = routes_content.scan(/namespace\s*:v(\d+)/).flatten
+      if api_versions.any?
+        changes['API Version Changes']['api_versions'] = "API versions found: #{api_versions.join(', ')}"
+      end
+    end
+    
+    # Check for serializer changes
+    changes['Serialization Changes'] = {}
+    if Dir.exist?('app/serializers')
+      Dir.glob('app/serializers/**/*.rb').each do |file|
+        serializer_name = File.basename(file, '.rb')
+        changes['Serialization Changes'][serializer_name] = "Serializer present"
+      end
+    end
+    
+    changes.reject { |_, v| v.empty? }
+  end
+
+  def calculate_complexity_scores
+    scores = {}
+    # Simple complexity score: dependencies + associations
+    @models.each do |model_name, data|
+      scores[model_name] = data[:dependencies].size + data[:associations].size
+    end
+    @services.each do |service_name, data|
+      scores[service_name] = data[:dependencies].size
+    end
+    scores
+  end
+
+  def analyze_test_coverage
+    coverage = {}
+    
+    # Check for test files existence
+    coverage['Test Files'] = {}
+    [@models, @controllers, @services, @workers].each do |component_hash|
+      component_hash.each do |name, data|
+        test_file_patterns = [
+          "spec/#{data[:file].gsub('app/', '')}_spec.rb",
+          "test/#{data[:file].gsub('app/', '')}_test.rb",
+          "spec/#{data[:file].gsub('app/', '').gsub('.rb', '')}_spec.rb",
+          "test/#{data[:file].gsub('app/', '').gsub('.rb', '')}_test.rb"
+        ]
+        
+        has_test = test_file_patterns.any? { |pattern| File.exist?(pattern) }
+        coverage['Test Files'][name] = has_test ? "Has tests" : "Missing tests"
+      end
+    end
+    
+    # Check for factory files
+    coverage['Factory Coverage'] = {}
+    @models.each do |model_name, _|
+      factory_patterns = [
+        "spec/factories/#{model_name.downcase.gsub(/([A-Z])/, '_\1').sub(/^_/, '')}.rb",
+        "test/factories/#{model_name.downcase.gsub(/([A-Z])/, '_\1').sub(/^_/, '')}.rb",
+        "spec/factories/#{model_name.downcase}s.rb",
+        "test/factories/#{model_name.downcase}s.rb"
+      ]
+      
+      has_factory = factory_patterns.any? { |pattern| File.exist?(pattern) }
+      coverage['Factory Coverage'][model_name] = has_factory ? "Has factory" : "Missing factory"
+    end
+    
+    # Analyze test complexity
+    coverage['Test Complexity'] = {}
+    test_files = Dir.glob("{spec,test}/**/*_{spec,test}.rb")
+    test_files.each do |test_file|
+      content = File.read(test_file)
+      test_count = content.scan(/it\s+['"]|test\s+['"]|should\s+['"]/).size
+      describe_count = content.scan(/describe\s+|context\s+/).size
+      
+      if test_count > 0
+        complexity = if test_count > 20 then "High"
+                    elsif test_count > 10 then "Medium"  
+                    else "Low"
+                    end
+        coverage['Test Complexity'][File.basename(test_file)] = "#{test_count} tests, #{describe_count} groups (#{complexity})"
+      end
+    end
+    
+    coverage.reject { |_, v| v.empty? }
+  end
+
+  def perform_pr_enhanced_analysis(changed_files, base_branch)
+    puts "🔍 Performing enhanced PR analysis..."
+    
+    # Analyze changed files for specific risks
+    @pr_performance_risks = analyze_pr_performance_risks(changed_files)
+    @pr_security_risks = analyze_pr_security_risks(changed_files)  
+    @pr_database_impacts = analyze_pr_database_impacts(changed_files)
+    @pr_test_impacts = analyze_pr_test_impacts(changed_files)
+    @pr_ai_risk_score = calculate_ai_risk_score(changed_files)
+    
+    puts "✅ Enhanced PR analysis complete!"
+  end
+
+  def analyze_pr_performance_risks(changed_files)
+    risks = {}
+    changed_files.each do |file|
+      next unless File.exist?(file)
+      content = File.read(file)
+      
+      # Check for new N+1 queries
+      if content.match?(/has_many.*\n.*\.each.*\n.*\.(find|where)/)
+        risks[file] = (risks[file] || []) << "Potential N+1 query introduced"
+      end
+      
+      # Check for missing eager loading
+      if content.match?(/\.includes?\(.*\)/) && content.match?(/\.(find|where|all)/)
+        risks[file] = (risks[file] || []) << "Consider eager loading optimization"
+      end
+      
+      # Check for expensive operations in views/controllers
+      if file.match?(/controllers/) && content.match?(/(\.size|\.count|\.sum)/)
+        risks[file] = (risks[file] || []) << "Expensive calculations in controller"
+      end
+    end
+    risks
+  end
+
+  def analyze_pr_security_risks(changed_files)
+    risks = {}
+    changed_files.each do |file|
+      next unless File.exist?(file)
+      content = File.read(file)
+      
+      # Check for authentication bypass
+      if content.match?(/skip_before_action.*authenticate/)
+        risks[file] = (risks[file] || []) << "Authentication bypass detected"
+      end
+      
+      # Check for unsafe parameter handling
+      if content.match?(/params\.permit!|params\[.*\]\.permit!/)
+        risks[file] = (risks[file] || []) << "Mass assignment vulnerability"
+      end
+      
+      # Check for SQL injection risks
+      if content.match?(/\.where\(.*#\{.*\}.*\)/)
+        risks[file] = (risks[file] || []) << "Potential SQL injection"
+      end
+      
+      # Check for XSS vulnerabilities  
+      if content.match?(/html_safe|raw\(/)
+        risks[file] = (risks[file] || []) << "Potential XSS vulnerability"
+      end
+    end
+    risks
+  end
+
+  def analyze_pr_database_impacts(changed_files)
+    impacts = {}
+    changed_files.each do |file|
+      next unless File.exist?(file)
+      content = File.read(file)
+      
+      # Check for new associations without indexes
+      foreign_keys = content.scan(/belongs_to\s+:(\w+)/).flatten
+      if foreign_keys.any?
+        impacts[file] = (impacts[file] || []) << "New associations may need indexes: #{foreign_keys.join(', ')}"
+      end
+      
+      # Check for schema changes
+      if content.match?(/(add_column|remove_column|change_column|add_index|remove_index)/)
+        impacts[file] = (impacts[file] || []) << "Database schema changes detected"
+      end
+      
+      # Check for data migrations
+      if content.match?(/\.update_all|\.delete_all|\.destroy_all/)
+        impacts[file] = (impacts[file] || []) << "Bulk data operations detected"
+      end
+    end
+    impacts
+  end
+
+  def analyze_pr_test_impacts(changed_files)
+    impacts = {}
+    
+    # Find corresponding test files for changed files
+    changed_files.each do |file|
+      test_patterns = [
+        file.gsub('app/', 'spec/').gsub('.rb', '_spec.rb'),
+        file.gsub('app/', 'test/').gsub('.rb', '_test.rb')
+      ]
+      
+      existing_tests = test_patterns.select { |pattern| File.exist?(pattern) }
+      
+      if existing_tests.empty?
+        impacts[file] = "No corresponding test file found"
+      else
+        # Analyze test coverage for changed methods
+        content = File.read(file)
+        methods = content.scan(/def\s+(\w+)/).flatten - %w[initialize private protected]
+        
+        existing_tests.each do |test_file|
+          test_content = File.read(test_file)
+          tested_methods = methods.select { |method| test_content.include?(method) }
+          untested_methods = methods - tested_methods
+          
+          if untested_methods.any?
+            impacts[file] = "Methods lacking tests: #{untested_methods.join(', ')}"
+          end
+        end
+      end
+    end
+    
+    impacts
+  end
+
+  def calculate_ai_risk_score(changed_files)
+    # Simulated AI risk scoring based on multiple factors
+    total_score = 0
+    max_score = 100
+    
+    factors = {
+      file_count: changed_files.size,
+      model_changes: changed_files.count { |f| f.include?('models/') },
+      controller_changes: changed_files.count { |f| f.include?('controllers/') },
+      service_changes: changed_files.count { |f| f.include?('services/') },
+      test_changes: changed_files.count { |f| f.include?('spec/') || f.include?('test/') }
+    }
+    
+    # Weight different types of changes
+    weights = {
+      file_count: 2,
+      model_changes: 5,      # Models are high impact
+      controller_changes: 3,  # Controllers are medium-high impact  
+      service_changes: 4,     # Services are high impact
+      test_changes: -2        # Tests reduce risk
+    }
+    
+    factors.each do |factor, count|
+      total_score += count * weights[factor]
+    end
+    
+    # Normalize to 0-100 scale
+    risk_score = [[total_score, 0].max, max_score].min
+    
+    {
+      score: risk_score,
+      level: case risk_score
+             when 0..30 then "Low"
+             when 31..60 then "Medium"  
+             when 61..80 then "High"
+             else "Critical"
+             end,
+      factors: factors,
+      recommendations: generate_ai_recommendations(factors, risk_score)
+    }
+  end
+
+  def generate_ai_recommendations(factors, risk_score)
+    recommendations = []
+    
+    if factors[:model_changes] > 3
+      recommendations << "Consider breaking down model changes into smaller PRs"
+    end
+    
+    if factors[:test_changes] == 0 && factors[:file_count] > 1
+      recommendations << "Add tests for the changes to reduce risk"
+    end
+    
+    if risk_score > 60
+      recommendations << "This PR has high complexity - consider additional code review"
+    end
+    
+    if factors[:controller_changes] > 2
+      recommendations << "Multiple controller changes detected - verify API contracts"
+    end
+    
+    if factors[:service_changes] > 1
+      recommendations << "Service layer changes may affect multiple consumers"
+    end
+    
+    recommendations
+  end
+
+  def generate_enhanced_reports
+    FileUtils.mkdir_p("#{output_path}/reports")
+
+    generate_performance_report
+    generate_security_report
+    generate_database_impact_report
+    generate_api_changes_report
+    generate_complexity_report
+    generate_test_coverage_report
+  end
+
+  def generate_performance_report
+    mermaid = String.new
+    mermaid << "graph TD\n"
+    mermaid << "  subgraph \"Performance Risks\"\n"
+    
+    @performance_risks.each do |risk_type, details|
+      mermaid << "    subgraph \"#{risk_type}\"\n"
+      details.each do |item, description|
+        mermaid << "      #{item}[#{item}<br/>#{description}]\n"
+      end
+      mermaid << "    end\n"
+    end
+    
+    mermaid << "  end\n\n"
+    
+    File.write("#{output_path}/reports/performance.md", mermaid)
+  end
+
+  def generate_security_report
+    mermaid = String.new
+    mermaid << "graph TD\n"
+    mermaid << "  subgraph \"Security Risks\"\n"
+    
+    @security_risks.each do |risk_type, details|
+      mermaid << "    subgraph \"#{risk_type}\"\n"
+      details.each do |item, description|
+        mermaid << "      #{item}[#{item}<br/>#{description}]\n"
+      end
+      mermaid << "    end\n"
+    end
+    
+    mermaid << "  end\n\n"
+    
+    File.write("#{output_path}/reports/security.md", mermaid)
+  end
+
+  def generate_database_impact_report
+    mermaid = String.new
+    mermaid << "graph TD\n"
+    mermaid << "  subgraph \"Database Impact\"\n"
+    
+    @database_impacts.each do |impact_type, details|
+      mermaid << "    subgraph \"#{impact_type}\"\n"
+      details.each do |item, description|
+        mermaid << "      #{item}[#{item}<br/>#{description}]\n"
+      end
+      mermaid << "    end\n"
+    end
+    
+    mermaid << "  end\n\n"
+    
+    File.write("#{output_path}/reports/database_impact.md", mermaid)
+  end
+
+  def generate_api_changes_report
+    mermaid = String.new
+    mermaid << "graph TD\n"
+    mermaid << "  subgraph \"API Changes\"\n"
+    
+    @api_changes.each do |change_type, details|
+      mermaid << "    subgraph \"#{change_type}\"\n"
+      details.each do |item, description|
+        mermaid << "      #{item}[#{item}<br/>#{description}]\n"
+      end
+      mermaid << "    end\n"
+    end
+    
+    mermaid << "  end\n\n"
+    
+    File.write("#{output_path}/reports/api_changes.md", mermaid)
+  end
+
+  def generate_complexity_report
+    mermaid = String.new
+    mermaid << "graph TD\n"
+    mermaid << "  subgraph \"Complexity Analysis\"\n"
+    
+    # Show top 10 most complex components
+    top_complexity = @complexity_scores.sort_by { |_, score| score }.reverse.first(10)
+    
+    mermaid << "    subgraph \"Top Complex Components\"\n"
+    top_complexity.each do |component, score|
+      mermaid << "      #{component}[#{component}<br/>Complexity: #{score}]:::#{complexity_class_for_score(score)}\n"
+    end
+    mermaid << "    end\n"
+    
+    # Show models with most dependencies
+    most_dependent = @models.sort_by { |_, data| data[:dependencies].size }.reverse.first(10)
+    mermaid << "    subgraph \"Models with Most Dependencies\"\n"
+    most_dependent.each do |model_name, data|
+      complexity_class = if data[:dependencies].size > 15
+                           "highComplexity"
+                         elsif data[:dependencies].size > 8
+                           "mediumComplexity"
+                         else
+                           "lowComplexity"
+                         end
+      mermaid << "      #{model_name}[#{model_name}<br/>#{data[:dependencies].size} deps]:::#{complexity_class}\n"
+    end
+    mermaid << "    end\n"
+    
+    mermaid << "  end\n\n"
+    
+    # Add class definitions for styling
+    mermaid << "\n  classDef highComplexity fill:#ffcccc,stroke:#ff6666,stroke-width:2px\n"
+    mermaid << "  classDef mediumComplexity fill:#ffffcc,stroke:#ffaa66,stroke-width:2px\n"
+    mermaid << "  classDef lowComplexity fill:#ccffcc,stroke:#66ff66,stroke-width:2px\n"
+    
+    File.write("#{output_path}/reports/complexity.md", mermaid)
+  end
+
+  def generate_test_coverage_report
+    mermaid = String.new
+    mermaid << "graph TD\n"
+    mermaid << "  subgraph \"Test Coverage Analysis\"\n"
+    
+    @test_coverage.each do |test_type, details|
+      mermaid << "    subgraph \"#{test_type}\"\n"
+      details.each do |item, description|
+        mermaid << "      #{item}[#{item}<br/>#{description}]\n"
+      end
+      mermaid << "    end\n"
+    end
+    
+    mermaid << "  end\n\n"
+    
+    File.write("#{output_path}/reports/test_coverage.md", mermaid)
+  end
+
+  def complexity_class_for_score(score)
+    if score > 20
+      "highComplexity"
+    elsif score > 10
+      "mediumComplexity"
+    else
+      "lowComplexity"
+    end
+  end
+
+  def generate_enhanced_pr_report(changed_files)
+    # Generate comprehensive PR analysis report
+    generate_pr_risk_assessment_report(changed_files)
+    generate_pr_impact_summary_report(changed_files)
+    generate_exportable_reports(changed_files)
+    
+    mermaid = String.new("")
+    mermaid << "graph TD\n"
+    mermaid << "  subgraph \"Enhanced PR Report\"\n"
+    
+    # Add AI Risk Score prominently
+    if @pr_ai_risk_score
+      risk_class = case @pr_ai_risk_score[:level]
+                   when "Critical" then "criticalRisk"
+                   when "High" then "highRisk"
+                   when "Medium" then "mediumRisk"
+                   else "lowRisk"
+                   end
+      mermaid << "    AIRisk[\"🤖 AI Risk Score: #{@pr_ai_risk_score[:score]}/100<br/>Level: #{@pr_ai_risk_score[:level]}\"]:::#{risk_class}\n"
+    end
+    
+    # Group components by type
+    models = changed_files.select { |f| f.start_with?('app/models/') }.map { |f| classify_string(File.basename(f, '.rb')) }
+    controllers = changed_files.select { |f| f.start_with?('app/controllers/') }.map { |f| classify_string(File.basename(f, '.rb')) }
+    services = changed_files.select { |f| f.start_with?('app/services/') }.map { |f| classify_string(File.basename(f, '.rb')) }
+    workers = changed_files.select { |f| f.start_with?('app/workers/') }.map { |f| classify_string(File.basename(f, '.rb')) }
+    
+    # Add changed files with impact level
+    mermaid << "    subgraph \"Changed Files\"\n"
+    changed_files.each do |file|
+      impact_level = calculate_file_impact(file)
+      impact_class = case impact_level
+                     when 'high'
+                       "highImpact"
+                     when 'medium'
+                       "mediumImpact"
+                     else
+                       "lowImpact"
+                     end
+      mermaid << "      #{file.gsub(/[^a-zA-Z0-9]/, '_')}[#{File.basename(file)}<br/>#{impact_level} impact]:::#{impact_class}\n"
+    end
+    mermaid << "    end\n\n"
+    
+    # Add affected components with dependency info
+    if models.any?
+      mermaid << "    subgraph \"Affected Models\"\n"
+      models.each do |model|
+        data = @models[model]
+        if data
+          dependency_count = data[:dependencies].size
+          association_count = data[:associations].size
+          mermaid << "      #{model}[#{model}<br/>#{dependency_count} deps, #{association_count} assoc]\n"
+        else
+          mermaid << "      #{model}[#{model}]\n"
+        end
+      end
+      mermaid << "    end\n\n"
+    end
+    
+    if controllers.any?
+      mermaid << "    subgraph \"Affected Controllers\"\n"
+      controllers.each do |controller|
+        data = @controllers[controller]
+        if data
+          dependency_count = data[:dependencies].size
+          action_count = data[:actions].size
+          mermaid << "      #{controller}[#{controller}<br/>#{dependency_count} deps, #{action_count} actions]\n"
+        else
+          mermaid << "      #{controller}[#{controller}]\n"
+        end
+      end
+      mermaid << "    end\n\n"
+    end
+    
+    if services.any?
+      mermaid << "    subgraph \"Affected Services\"\n"
+      services.each do |service|
+        data = @services[service]
+        if data
+          dependency_count = data[:dependencies].size
+          mermaid << "      #{service}[#{service}<br/>#{dependency_count} deps]\n"
+        else
+          mermaid << "      #{service}[#{service}]\n"
+        end
+      end
+      mermaid << "    end\n\n"
+    end
+    
+    if workers.any?
+      mermaid << "    subgraph \"Affected Workers\"\n"
+      workers.each do |worker|
+        data = @workers[worker]
+        if data
+          dependency_count = data[:dependencies].size
+          mermaid << "      #{worker}[#{worker}<br/>#{dependency_count} deps]\n"
+        else
+          mermaid << "      #{worker}[#{worker}]\n"
+        end
+      end
+      mermaid << "    end\n\n"
+    end
+    
+    mermaid << "  end\n\n"
+    
+    # Add detailed relationships
+    mermaid << "  %% Direct file changes\n"
+    changed_files.each do |file|
+      case file
+      when /app\/models\/(.+)\.rb$/
+        model_name = classify_string($1)
+        mermaid << "  #{file.gsub(/[^a-zA-Z0-9]/, '_')} --> #{model_name}\n"
+      when /app\/controllers\/(.+)\.rb$/
+        controller_name = classify_string($1)
+        mermaid << "  #{file.gsub(/[^a-zA-Z0-9]/, '_')} --> #{controller_name}\n"
+      when /app\/services\/(.+)\.rb$/
+        service_name = classify_string($1)
+        mermaid << "  #{file.gsub(/[^a-zA-Z0-9]/, '_')} --> #{service_name}\n"
+      when /app\/workers\/(.+)\.rb$/
+        worker_name = classify_string($1)
+        mermaid << "  #{file.gsub(/[^a-zA-Z0-9]/, '_')} --> #{worker_name}\n"
+      end
+    end
+    
+    # Add dependency relationships between affected components
+    mermaid << "  %% Dependency relationships\n"
+    models.each do |model|
+      data = @models[model]
+      if data
+        data[:dependencies].each do |dep|
+          if models.include?(dep) || controllers.include?(dep) || services.include?(dep)
+            mermaid << "  #{model} -.-> #{dep}\n"
+          end
+        end
+      end
+    end
+    
+    controllers.each do |controller|
+      data = @controllers[controller]
+      if data
+        data[:dependencies].each do |dep|
+          if models.include?(dep) || services.include?(dep)
+            mermaid << "  #{controller} -.-> #{dep}\n"
+          end
+        end
+      end
+    end
+    
+    # Add class definitions for styling
+    mermaid << "\n  classDef highImpact fill:#ff6666,stroke:#cc0000,stroke-width:2px\n"
+    mermaid << "  classDef mediumImpact fill:#ffaa66,stroke:#cc6600,stroke-width:2px\n"
+    mermaid << "  classDef lowImpact fill:#66ff66,stroke:#00cc00,stroke-width:2px\n"
+    mermaid << "  classDef highComplexity fill:#ffcccc,stroke:#ff6666,stroke-width:2px\n"
+    mermaid << "  classDef mediumComplexity fill:#ffffcc,stroke:#ffaa66,stroke-width:2px\n"
+    mermaid << "  classDef lowComplexity fill:#ccffcc,stroke:#66ff66,stroke-width:2px\n"
+    mermaid << "  classDef criticalRisk fill:#cc0000,stroke:#990000,stroke-width:3px,color:#ffffff\n"
+    mermaid << "  classDef highRisk fill:#ff3333,stroke:#cc0000,stroke-width:2px\n"
+    mermaid << "  classDef mediumRisk fill:#ffaa66,stroke:#cc6600,stroke-width:2px\n"
+    mermaid << "  classDef lowRisk fill:#66ff66,stroke:#00cc00,stroke-width:2px\n"
+    
+    File.write("#{output_path}/reports/enhanced_pr_report.md", mermaid)
+  end
+
+  def generate_pr_risk_assessment_report(changed_files)
+    content = String.new("# 🚨 PR Risk Assessment Report\n\n")
+    
+    # AI Risk Score Section
+    if @pr_ai_risk_score
+      content << "## 🤖 AI-Powered Risk Analysis\n\n"
+      content << "**Overall Risk Score:** #{@pr_ai_risk_score[:score]}/100 (#{@pr_ai_risk_score[:level]})\n\n"
+      
+             content << "### Risk Factors:\n"
+       @pr_ai_risk_score[:factors].each do |factor, value|
+         content << "- **#{humanize_string(factor)}:** #{value}\n"
+       end
+      
+      if @pr_ai_risk_score[:recommendations].any?
+        content << "\n### 💡 AI Recommendations:\n"
+        @pr_ai_risk_score[:recommendations].each do |rec|
+          content << "- #{rec}\n"
+        end
+      end
+      content << "\n---\n\n"
+    end
+    
+    # Performance Risks
+    if @pr_performance_risks&.any?
+      content << "## ⚡ Performance Risks\n\n"
+      @pr_performance_risks.each do |file, risks|
+        content << "### #{file}\n"
+        risks.each { |risk| content << "- ⚠️ #{risk}\n" }
+        content << "\n"
+      end
+      content << "---\n\n"
+    end
+    
+    # Security Risks
+    if @pr_security_risks&.any?
+      content << "## 🔒 Security Risks\n\n"
+      @pr_security_risks.each do |file, risks|
+        content << "### #{file}\n"
+        risks.each { |risk| content << "- 🛡️ #{risk}\n" }
+        content << "\n"
+      end
+      content << "---\n\n"
+    end
+    
+    # Database Impact
+    if @pr_database_impacts&.any?
+      content << "## 🗄️ Database Impact\n\n"
+      @pr_database_impacts.each do |file, impacts|
+        content << "### #{file}\n"
+        impacts.each { |impact| content << "- 💾 #{impact}\n" }
+        content << "\n"
+      end
+      content << "---\n\n"
+    end
+    
+    # Test Impact
+    if @pr_test_impacts&.any?
+      content << "## 🧪 Test Coverage Impact\n\n"
+      @pr_test_impacts.each do |file, impact|
+        content << "- **#{file}:** #{impact}\n"
+      end
+      content << "\n"
+    end
+    
+    File.write("#{output_path}/reports/pr_risk_assessment.md", content)
+  end
+
+  def generate_pr_impact_summary_report(changed_files)
+    content = String.new("# 📊 PR Impact Summary\n\n")
+    
+    content << "## 📈 Change Statistics\n\n"
+    content << "| Metric | Count |\n"
+    content << "|--------|-------|\n"
+    content << "| Total Files Changed | #{changed_files.size} |\n"
+    content << "| Models Modified | #{changed_files.count { |f| f.include?('models/') }} |\n"
+    content << "| Controllers Modified | #{changed_files.count { |f| f.include?('controllers/') }} |\n"
+    content << "| Services Modified | #{changed_files.count { |f| f.include?('services/') }} |\n"
+    content << "| Workers Modified | #{changed_files.count { |f| f.include?('workers/') }} |\n"
+    content << "| Test Files Modified | #{changed_files.count { |f| f.include?('spec/') || f.include?('test/') }} |\n"
+    
+    content << "\n## 🎯 Impact Areas\n\n"
+    
+    # Categorize impact by domain
+    domains = analyze_impact_by_domain(changed_files)
+    domains.each do |domain, files|
+      content << "### #{domain}\n"
+      files.each { |file| content << "- `#{file}`\n" }
+      content << "\n"
+    end
+    
+    # Risk level summary
+    if @pr_ai_risk_score
+      content << "## 🚦 Risk Level Summary\n\n"
+      case @pr_ai_risk_score[:level]
+      when "Critical"
+        content << "🔴 **CRITICAL RISK** - This PR requires immediate attention and thorough review.\n\n"
+      when "High"
+        content << "🟠 **HIGH RISK** - Proceed with caution and ensure comprehensive testing.\n\n"
+      when "Medium"
+        content << "🟡 **MEDIUM RISK** - Standard review process recommended.\n\n"
+      else
+        content << "🟢 **LOW RISK** - Low impact changes, routine review sufficient.\n\n"
+      end
+    end
+    
+    File.write("#{output_path}/reports/pr_impact_summary.md", content)
+  end
+
+  def analyze_impact_by_domain(changed_files)
+    domains = {
+      'User Management' => [],
+      'Document Handling' => [],
+      'Business Logic' => [],
+      'Background Processing' => [],
+      'API/Controllers' => [],
+      'Testing' => [],
+      'Other' => []
+    }
+    
+    changed_files.each do |file|
+      case file
+      when /user|contact|firm|lawyer|client/i
+        domains['User Management'] << file
+      when /document|file|attachment/i
+        domains['Document Handling'] << file
+      when /service/i
+        domains['Business Logic'] << file
+      when /worker|job/i
+        domains['Background Processing'] << file
+      when /controller/i
+        domains['API/Controllers'] << file
+      when /spec|test/i
+        domains['Testing'] << file
+      else
+        domains['Other'] << file
+      end
+    end
+    
+    domains.reject { |_, files| files.empty? }
+  end
+
+  def generate_exportable_reports(changed_files)
+    # Generate JSON export for API consumption
+    json_data = {
+      timestamp: Time.now.strftime("%Y-%m-%dT%H:%M:%S%z"),
+      changed_files: changed_files,
+      ai_risk_score: @pr_ai_risk_score,
+      performance_risks: @pr_performance_risks,
+      security_risks: @pr_security_risks,
+      database_impacts: @pr_database_impacts,
+      test_impacts: @pr_test_impacts,
+      complexity_scores: @complexity_scores,
+      summary: {
+        total_files: changed_files.size,
+        risk_level: @pr_ai_risk_score&.dig(:level) || "Unknown",
+        has_security_risks: @pr_security_risks&.any? || false,
+        has_performance_risks: @pr_performance_risks&.any? || false,
+        has_db_impacts: @pr_database_impacts&.any? || false
+      }
+    }
+    
+    File.write("#{output_path}/reports/pr_analysis.json", JSON.pretty_generate(json_data))
+    
+    # Generate HTML report
+    generate_html_report(changed_files, json_data)
+    
+    # Generate GitHub comment format
+    generate_github_comment_format(changed_files)
+  end
+
+  def generate_html_report(changed_files, data)
+    html_content = <<~HTML
+      <!DOCTYPE html>
+      <html lang="en">
+      <head>
+          <meta charset="UTF-8">
+          <meta name="viewport" content="width=device-width, initial-scale=1.0">
+          <title>PR Analysis Report</title>
+          <style>
+              body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; margin: 40px; line-height: 1.6; }
+              .header { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 20px; border-radius: 8px; margin-bottom: 20px; }
+              .risk-score { font-size: 2em; font-weight: bold; }
+              .risk-critical { color: #dc3545; }
+              .risk-high { color: #fd7e14; }
+              .risk-medium { color: #ffc107; }
+              .risk-low { color: #28a745; }
+              .section { background: #f8f9fa; padding: 20px; margin: 20px 0; border-radius: 8px; border-left: 4px solid #007bff; }
+              .file-list { list-style: none; padding: 0; }
+              .file-item { background: white; margin: 5px 0; padding: 10px; border-radius: 4px; border-left: 3px solid #007bff; }
+              .recommendations { background: #e7f3ff; border-left: 4px solid #0066cc; }
+              table { width: 100%; border-collapse: collapse; margin: 20px 0; }
+              th, td { border: 1px solid #ddd; padding: 12px; text-align: left; }
+              th { background-color: #f2f2f2; }
+          </style>
+      </head>
+      <body>
+          <div class="header">
+              <h1>🔍 PR Analysis Report</h1>
+              <p>Generated on #{Time.now.strftime("%B %d, %Y at %I:%M %p")}</p>
+          </div>
+    HTML
+    
+    if data[:ai_risk_score]
+      risk_class = "risk-#{data[:ai_risk_score][:level].downcase}"
+      html_content << <<~HTML
+        <div class="section">
+            <h2>🤖 AI Risk Assessment</h2>
+            <div class="risk-score #{risk_class}">
+                Risk Score: #{data[:ai_risk_score][:score]}/100 (#{data[:ai_risk_score][:level]})
+            </div>
+            #{data[:ai_risk_score][:recommendations].any? ? 
+              "<div class='recommendations'><h3>💡 Recommendations:</h3><ul>#{data[:ai_risk_score][:recommendations].map { |r| "<li>#{r}</li>" }.join}</ul></div>" : ""}
+        </div>
+      HTML
+    end
+    
+    html_content << <<~HTML
+      <div class="section">
+          <h2>📊 Change Summary</h2>
+          <table>
+              <tr><th>Metric</th><th>Count</th></tr>
+              <tr><td>Total Files Changed</td><td>#{data[:changed_files].size}</td></tr>
+              <tr><td>Models Modified</td><td>#{data[:changed_files].count { |f| f.include?('models/') }}</td></tr>
+              <tr><td>Controllers Modified</td><td>#{data[:changed_files].count { |f| f.include?('controllers/') }}</td></tr>
+              <tr><td>Services Modified</td><td>#{data[:changed_files].count { |f| f.include?('services/') }}</td></tr>
+          </table>
+      </div>
+
+      <div class="section">
+          <h2>📝 Changed Files</h2>
+          <ul class="file-list">
+              #{data[:changed_files].map { |file| "<li class='file-item'>#{file}</li>" }.join}
+          </ul>
+      </div>
+      </body>
+      </html>
+    HTML
+    
+    File.write("#{output_path}/reports/pr_analysis_report.html", html_content)
+  end
+
+  def generate_github_comment_format(changed_files)
+    comment = String.new("## 🔍 Automated PR Analysis\n\n")
+    
+    if @pr_ai_risk_score
+      risk_emoji = case @pr_ai_risk_score[:level]
+                   when "Critical" then "🔴"
+                   when "High" then "🟠"
+                   when "Medium" then "🟡"
+                   else "🟢"
+                   end
+      
+      comment << "### #{risk_emoji} Risk Assessment\n"
+      comment << "**AI Risk Score:** #{@pr_ai_risk_score[:score]}/100 (#{@pr_ai_risk_score[:level]})\n\n"
+      
+      if @pr_ai_risk_score[:recommendations].any?
+        comment << "**Recommendations:**\n"
+        @pr_ai_risk_score[:recommendations].each { |rec| comment << "- #{rec}\n" }
+        comment << "\n"
+      end
+    end
+    
+    # Add quick stats
+    comment << "### 📊 Change Statistics\n"
+    comment << "- **Files Changed:** #{changed_files.size}\n"
+    comment << "- **Models:** #{changed_files.count { |f| f.include?('models/') }}\n"
+    comment << "- **Controllers:** #{changed_files.count { |f| f.include?('controllers/') }}\n"
+    comment << "- **Services:** #{changed_files.count { |f| f.include?('services/') }}\n\n"
+    
+    # Add risks summary
+    risk_count = [@pr_performance_risks&.size, @pr_security_risks&.size, @pr_database_impacts&.size].compact.sum
+    if risk_count > 0
+      comment << "### ⚠️ Issues Found\n"
+      comment << "- **Performance Risks:** #{@pr_performance_risks&.size || 0}\n" if @pr_performance_risks&.any?
+      comment << "- **Security Risks:** #{@pr_security_risks&.size || 0}\n" if @pr_security_risks&.any?
+      comment << "- **Database Impacts:** #{@pr_database_impacts&.size || 0}\n" if @pr_database_impacts&.any?
+      comment << "\n"
+    end
+    
+    comment << "### 📋 Detailed Reports\n"
+    comment << "View the complete analysis in the generated reports:\n"
+    comment << "- [Risk Assessment](./docs/system-diagrams/reports/pr_risk_assessment.md)\n"
+    comment << "- [Impact Summary](./docs/system-diagrams/reports/pr_impact_summary.md)\n"
+    comment << "- [Visual Diagram](./docs/system-diagrams/reports/enhanced_pr_report.md)\n\n"
+    
+    comment << "<details>\n<summary>🎯 View Dependency Diagram</summary>\n\n"
+    comment << "```mermaid\n"
+    comment << File.read("#{output_path}/reports/enhanced_pr_report.md") if File.exist?("#{output_path}/reports/enhanced_pr_report.md")
+    comment << "```\n"
+    comment << "</details>\n\n"
+    
+    comment << "---\n"
+    comment << "_Generated by System Visualizer at #{Time.now.strftime("%Y-%m-%d %H:%M:%S")}_"
+    
+    File.write("#{output_path}/reports/github_comment.md", comment)
+  end
+
+  private
+
+  def humanize_string(str)
+    str.to_s.gsub('_', ' ').split.map(&:capitalize).join(' ')
   end
 end 
